@@ -1,0 +1,21 @@
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Database directory (if using SQLite)
+data/
+
+# Docker cache / build artifacts (optional, but good practice)
+.dockerignore
+docker-compose.override.yml
+
+# IDE / Editor specific files
+.vscode/
+.idea/
+*.swp
+*~

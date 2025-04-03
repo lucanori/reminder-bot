@@ -1,0 +1,9 @@
+services:
+  reminder-bot:
+    image: ghcr.io/lucanori/reminder-bot:latest
+    container_name: reminder-bot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
