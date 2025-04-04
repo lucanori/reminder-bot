@@ -1,3 +1,6 @@
 python-telegram-bot[job-queue]>=20.0,<21.0
 SQLAlchemy>=1.4,<2.1
 python-dotenv>=0.20,<1.1
+Flask>=2.0,<3.1
+Flask-Login>=0.6,<0.7
+supervisor>=4.2,<4.3

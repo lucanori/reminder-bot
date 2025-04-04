@@ -3,6 +3,21 @@ services:
     build: .
     container_name: reminder-bot
     restart: unless-stopped
-    env_file: .env
+    ports:
+      - "5011:5011"
     volumes:
       - ./data:/app/data
+    environment:
+      - TIMEZONE=${TZ}
+      - UID=${PUID}
+      - GID=${PGID}
+      - DEBUG=false
+      - DATABASE_URL=sqlite:////app/data/reminders.db
+      - TELEGRAM_BOT_TOKEN=${REMINDER_BOT_TELEGRAM_TOKEN}
+      # Admin Interface Credentials (CHANGE THIS!)
+      - ADMIN_USER=${REMINDER_BOT_ADMIN_USER}
+      - ADMIN_PASSWORD=${REMINDER_BOT_ADMIN_PASSWORD}
+      # Bot Operation Mode (blocklist or whitelist)
+      - BOT_MODE=blocklist
+      # Flask Secret Key (Important for sessions - CHANGE THIS!)
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}

@@ -41,52 +41,27 @@ def calculate_initial_next_run(schedule_time_str: str, interval_days: int, timez
     return next_run_time
 
 
-async def add_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int, text: str) -> str:
-    """Parses message, adds reminder to DB, and schedules the job via JobQueue."""
-    parts = text.split()
-    if len(parts) < 3:
-        return "Invalid format. Use: /set <Reminder Text> <HH:MM> [every <N> days]"
-
+async def add_reminder(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    chat_id: int,
+    reminder_text: str,
+    schedule_time_str: str,
+    interval_days: int
+) -> str:
+    """Adds reminder to DB and schedules the job via JobQueue using provided details."""
+    if not reminder_text:
+        logger.warning(f"Attempt to add reminder with empty text for user {user_id}")
+        return "Reminder text cannot be empty."
+    if interval_days <= 0:
+        logger.warning(f"Attempt to add reminder with invalid interval {interval_days} for user {user_id}")
+        return "Interval must be a positive number of days."
     try:
-        interval_days = 1
-        schedule_time_str = None
-        reminder_text_parts = []
-
-        if len(parts) >= 5 and parts[-3].lower() == "every" and parts[-1].lower() == "days":
-            schedule_time_str = parts[-4]
-            interval_days_str = parts[-2]
-            reminder_text_parts = parts[1:-4]
-            try:
-                interval_days = int(interval_days_str)
-                if interval_days <= 0:
-                    raise ValueError("Interval must be positive.")
-                datetime.strptime(schedule_time_str, '%H:%M')
-            except (ValueError, IndexError):
-                 return "Invalid format for interval. Use: ... every <N> days HH:MM"
-
-        elif len(parts) >= 3:
-            schedule_time_str = parts[-1]
-            reminder_text_parts = parts[1:-1]
-            try:
-                datetime.strptime(schedule_time_str, '%H:%M')
-            except (ValueError, IndexError):
-                 return "Invalid format. Ensure time HH:MM is the last part, or use '... every N days HH:MM'."
-        else:
-             return "Invalid format. Use: /set <Reminder Text> <HH:MM> [every <N> days]"
-
-        reminder_text = " ".join(reminder_text_parts)
-        if not reminder_text:
-             raise ValueError("Reminder text cannot be empty.")
-
-        if not schedule_time_str:
-             raise ValueError("Could not parse schedule time.")
-
-        reminder_text = " ".join(reminder_text_parts)
-        if not reminder_text:
-             raise ValueError("Reminder text cannot be empty.")
-
-    except (ValueError, IndexError):
-        return "Invalid format. Use: /set <Reminder Text> <HH:MM> [every <N> days]\nExample: /set Take out trash 08:00\nExample: /set Water plants every 3 days 19:00"
+        # Validate time format
+        datetime.strptime(schedule_time_str, '%H:%M')
+    except ValueError:
+        logger.warning(f"Attempt to add reminder with invalid time format '{schedule_time_str}' for user {user_id}")
+        return "Invalid time format. Please use HH:MM (e.g., 09:30)."
 
     db: Session = SessionLocal()
     try:
@@ -140,19 +115,34 @@ async def add_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id
 
     except Exception as e:
         db.rollback()
-        reminder_text_for_log = reminder_text if 'reminder_text' in locals() else "[Unknown Text]"
-        logger.error(f"Failed to process or add reminder '{reminder_text_for_log}' for user {user_id} due to error before DB commit: {e}", exc_info=True)
-        return "An error occurred while processing your request before saving. Please check the format and try again."
+        logger.error(f"Failed to process or add reminder '{reminder_text}' for user {user_id} due to error before DB commit: {e}", exc_info=True)
+        return "An error occurred while processing your request before saving."
+    finally:
+        db.close()
+
+async def get_reminders_list(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> list[tuple[int, str, str]]:
+    """Fetches reminders from DB and returns a list of (id, text, time_str)."""
+    db: Session = SessionLocal()
+    reminders_data = []
+    try:
+        user_reminders = db.query(Reminder).filter(Reminder.user_id == user_id).order_by(Reminder.id).all() # Order by ID for consistency
+        for r in user_reminders:
+            reminders_data.append((r.id, r.reminder_text, r.schedule_time))
+        return reminders_data
+    except Exception as e:
+        logger.error(f"Failed to get reminders list for user {user_id}: {e}", exc_info=True)
+        return [] # Return empty list on error
     finally:
         db.close()
 
 async def get_reminders(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
-    """Fetches reminders from DB and tries to get next run time from JobQueue."""
+    """Fetches reminders from DB, formats them as a string, including next run time."""
     db: Session = SessionLocal()
     try:
+        # Query reminders directly here to easily access job queue info
         user_reminders = db.query(Reminder).filter(Reminder.user_id == user_id).order_by(Reminder.next_reminder_time).all()
         if not user_reminders:
-            return "You have no active reminders set. Use /set to create one."
+            return "You have no active reminders set. Use the buttons or /set to create one."
 
         response_lines = ["Your current reminders:"]
         for r in user_reminders:
@@ -165,19 +155,27 @@ async def get_reminders(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str
                     if next_run_time_attr:
                         local_tz = pytz.timezone(TIMEZONE)
                         if isinstance(next_run_time_attr, datetime):
+                             # Ensure datetime is timezone-aware before formatting
                              if next_run_time_attr.tzinfo is None:
-                                 next_run_local = local_tz.localize(next_run_time_attr)
+                                 # Assume it's UTC if naive, then convert
+                                 next_run_aware = pytz.utc.localize(next_run_time_attr).astimezone(local_tz)
                              else:
-                                 next_run_local = next_run_time_attr.astimezone(local_tz)
-                             next_run_str = next_run_local.strftime('%Y-%m-%d %H:%M:%S %Z')
+                                 next_run_aware = next_run_time_attr.astimezone(local_tz)
+                             next_run_str = next_run_aware.strftime('%Y-%m-%d %H:%M:%S %Z')
                         else:
-                             next_run_str = f"Scheduled ({type(next_run_time_attr)})"
-
+                             # Handle cases where next_t might not be a datetime object as expected
+                             next_run_str = f"Scheduled (Type: {type(next_run_time_attr).__name__})"
                     else:
-                        next_run_str = "Scheduled (next time unknown)"
+                        # next_t might be None if the job finished or hasn't run yet
+                        next_run_str = "Scheduled (Next run time unavailable)"
                 else:
-                    next_run_str = f"Error: Job '{r.job_id}' not found in JobQueue!"
+                    # Job ID exists in DB but not in the queue (could be due to restart, error)
+                    next_run_str = f"Error: Job '{r.job_id}' not found in active queue!"
                     logger.warning(f"Job '{r.job_id}' for reminder {r.id} not found in JobQueue for user {user_id}")
+            else:
+                 # Reminder exists but has no job_id (shouldn't normally happen after creation)
+                 next_run_str = "Error: No associated job ID found!"
+                 logger.warning(f"Reminder {r.id} for user {user_id} has no job_id in the database.")
 
 
             interval_str = f"every {r.schedule_interval_days} days" if r.schedule_interval_days > 1 else "daily"
@@ -191,17 +189,8 @@ async def get_reminders(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str
     finally:
         db.close()
 
-async def remove_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, text: str) -> str:
-    """Parses message, finds reminder by ID, removes job from JobQueue, and deletes from DB."""
-    parts = text.split()
-    if len(parts) != 2:
-        return "Invalid format. Use: /delete <Reminder ID>"
-
-    try:
-        reminder_id_to_delete = int(parts[1])
-    except ValueError:
-        return "Invalid Reminder ID. Please provide a number."
-
+async def remove_reminder_by_id(context: ContextTypes.DEFAULT_TYPE, user_id: int, reminder_id_to_delete: int) -> str:
+    """Finds reminder by ID, removes job from JobQueue, and deletes from DB."""
     db: Session = SessionLocal()
     try:
         reminder_to_delete = db.query(Reminder).filter(
@@ -213,7 +202,7 @@ async def remove_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, text
             return f"Reminder with ID {reminder_id_to_delete} not found or does not belong to you."
 
         job_id = reminder_to_delete.job_id
-        reminder_text = reminder_to_delete.reminder_text
+        reminder_text = reminder_to_delete.reminder_text # Store text before deleting
 
         if job_id:
             jobs = context.job_queue.get_jobs_by_name(job_id)
@@ -223,6 +212,9 @@ async def remove_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, text
                 logger.info(f"Scheduled removal for job(s) named '{job_id}' for reminder {reminder_id_to_delete}")
             else:
                 logger.warning(f"Job '{job_id}' for reminder {reminder_id_to_delete} not found in JobQueue, proceeding with DB deletion.")
+        else:
+             logger.warning(f"Reminder {reminder_id_to_delete} for user {user_id} had no job_id associated in DB during deletion.")
+
 
         db.delete(reminder_to_delete)
         db.commit()
@@ -235,3 +227,19 @@ async def remove_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, text
         return f"An error occurred while deleting reminder ID {reminder_id_to_delete}. Please try again."
     finally:
         db.close()
+
+
+async def remove_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, text: str) -> str:
+    """Parses message for /delete command and calls remove_reminder_by_id."""
+    parts = text.split()
+    # Expecting "delete <ID>" after command parsing in run_reminder_bot.py
+    if len(parts) != 1: # Only the ID should be left after "delete " is stripped
+         return "Invalid format. Use: /delete <Reminder ID> or use the buttons."
+
+    try:
+        reminder_id_to_delete = int(parts[0])
+    except ValueError:
+        return "Invalid Reminder ID. Please provide a number."
+
+    # Call the refactored function
+    return await remove_reminder_by_id(context, user_id, reminder_id_to_delete)
