@@ -1,31 +1,81 @@
 name: Build and publish a Docker image to ghcr.io
 
 on:
-  # publish on releases, e.g. v2.1.13 (image tagged as "2.1.13" - "v" prefix is removed)
   release:
     types: [ published ]
 
-  # publish on pushes to the main branch (image tagged as "latest")
-  push:
-    branches:
-      - main
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   docker_publish:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Build and publish Docker image
-      - name: Build and publish a Docker image for ${{ github.repository }}
-        uses: macbre/push-to-ghcr@master
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
         with:
-          image_name: ${{ github.repository }}  # it will be lowercased internally
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          driver-opts: |
+            network=host
+            image=moby/buildkit:buildx-stable-1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # For alpha prereleases
+            type=raw,value=alpha,enable=${{ github.event.release.prerelease == true && contains(github.event.release.tag_name, 'alpha') }}
+            # For beta prereleases  
+            type=raw,value=beta,enable=${{ github.event.release.prerelease == true && contains(github.event.release.tag_name, 'beta') }}
+            # For stable releases (main branch releases)
+            type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
+            # Also tag with version numbers
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+          labels: |
+            org.opencontainers.image.title=${{ github.repository }}
+            org.opencontainers.image.description=Reminder Bot
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+          bake-target: docker-metadata-action
+          bake-file: |
+            ./docker-bake.hcl
+            ${{ steps.meta.outputs.bake-file }}
+
+      - name: Build and push Docker image
+        uses: docker/bake-action@v6
+        id: build
+        with:
+          source: .
+          files: |
+            ./docker-bake.hcl
+            ${{ steps.meta.outputs.bake-file }}
+          targets: image-all
+          push: true
+          set: |
+            image-all.cache-from=type=gha
+            image-all.cache-to=type=gha,mode=max
+            *.attest=type=provenance,mode=max
+            *.attest=type=sbom
 
       # Optional: Update Docker Hub as well
       # - name: Build and publish to Docker Hub

@@ -1,0 +1,82 @@
+[project]
+name = "telegram-reminder-bot"
+dynamic = ["version"]
+description = "Advanced Telegram bot for medication reminders"
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot[job-queue]>=22.0,<23.0",
+    "sqlalchemy>=2.0,<3.0",
+    "aiosqlite>=0.19,<1.0",
+    "alembic>=1.12,<2.0",
+    "pydantic>=2.0,<3.0",
+    "pydantic-settings>=2.0,<3.0",
+    "flask>=2.3,<3.0",
+    "flask-login>=0.6,<0.7",
+    "apscheduler>=3.10,<4.0",
+    "structlog>=23.0,<24.0",
+    "python-dotenv>=1.0,<2.0",
+    "fastapi>=0.104,<1.0",
+    "uvicorn>=0.24,<1.0",
+    "cryptography>=41.0,<42.0",
+    "requests>=2.31.0",
+    "pytz>=2023.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-mock>=3.10",
+    "pytest-cov>=4.0",
+    "factory-boy>=3.2",
+    "freezegun>=1.2",
+    "ruff>=0.1.0",
+    "pyright>=1.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+version_scheme = "release-branch-semver"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["reminder_bot*"]
+exclude = ["tests*", "data*", "alembic*", "scripts*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+src = ["reminder_bot"]
+fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "N", "D", "ASYNC"]
+ignore = ["D100", "D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+line-ending = "auto"
+
+[tool.pyright]
+include = ["reminder_bot"]
+exclude = ["tests"]
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "--cov=reminder_bot --cov-report=term-missing --cov-report=html"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.3.0",
+    "pytest-mock>=3.15.0",
+]

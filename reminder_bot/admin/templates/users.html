@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Reminder Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1><i class="bi bi-people"></i> User Management</h1>
+        <hr>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <input type="text" class="form-control" id="searchInput" placeholder="Search by Telegram ID...">
+    </div>
+    <div class="col-md-6">
+        <button class="btn btn-primary" onclick="loadUsers()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="users-table-container">
+            <div class="d-flex justify-content-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmModalTitle">Confirm Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="confirmModalBody">
+                Are you sure you want to perform this action?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmButton">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+let allUsers = [];
+
+function loadUsers() {
+    const container = document.getElementById('users-table-container');
+    container.innerHTML = `
+        <div class="d-flex justify-content-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    `;
+
+    fetch('/api/users?page=1&per_page=1000')
+        .then(response => response.json())
+        .then(data => {
+            allUsers = data.users;
+            displayUsers(allUsers);
+        })
+        .catch(error => {
+            console.error('Error loading users:', error);
+            container.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Failed to load users
+                </div>
+            `;
+        });
+}
+
+function displayUsers(users) {
+    const container = document.getElementById('users-table-container');
+    
+    if (users.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> No users found
+            </div>
+        `;
+        return;
+    }
+
+    let tableHtml = `
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Telegram ID</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    users.forEach(user => {
+        const statusBadge = user.is_blocked ? 
+            '<span class="badge bg-danger">Blocked</span>' : 
+            user.is_whitelisted ? 
+                '<span class="badge bg-success">Whitelisted</span>' : 
+                '<span class="badge bg-secondary">Normal</span>';
+
+        const blockAction = user.is_blocked ? 
+            `<button class="btn btn-sm btn-success" onclick="unblockUser(${user.telegram_id})">Unblock</button>` : 
+            `<button class="btn btn-sm btn-danger" onclick="blockUser(${user.telegram_id})">Block</button>`;
+
+        tableHtml += `
+            <tr>
+                <td>${user.telegram_id}</td>
+                <td>${statusBadge}</td>
+                <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                <td>${blockAction}</td>
+            </tr>
+        `;
+    });
+
+    tableHtml += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    container.innerHTML = tableHtml;
+}
+
+function blockUser(userId) {
+    showConfirmModal(
+        'Block User',
+        `Are you sure you want to block user ${userId}?`,
+        () => performUserAction(userId, 'block')
+    );
+}
+
+function unblockUser(userId) {
+    showConfirmModal(
+        'Unblock User',
+        `Are you sure you want to unblock user ${userId}?`,
+        () => performUserAction(userId, 'unblock')
+    );
+}
+
+function performUserAction(userId, action) {
+    fetch(`/api/users/${userId}/${action}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadUsers();
+            showAlert('success', data.message);
+        } else {
+            showAlert('danger', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error performing action:', error);
+        showAlert('danger', 'An error occurred while performing the action.');
+    });
+
+    const modal = bootstrap.Modal.getInstance(document.getElementById('confirmModal'));
+    modal.hide();
+}
+
+function showConfirmModal(title, message, onConfirm) {
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmModalBody').textContent = message;
+    
+    const confirmButton = document.getElementById('confirmButton');
+    confirmButton.onclick = onConfirm;
+    
+    const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+    modal.show();
+}
+
+function showAlert(type, message) {
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    document.querySelector('.container').insertAdjacentHTML('afterbegin', alertHtml);
+}
+
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    if (searchTerm === '') {
+        displayUsers(allUsers);
+    } else {
+        const filteredUsers = allUsers.filter(user => 
+            user.telegram_id.toString().includes(searchTerm)
+        );
+        displayUsers(filteredUsers);
+    }
+});
+
+document.addEventListener('DOMContentLoaded', loadUsers);
+</script>
+{% endblock %}

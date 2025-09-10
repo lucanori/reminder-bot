@@ -1,0 +1,26 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/goss-org/goss/master/docs/schema.yaml
+process:
+  "python -m reminder_bot":
+    running: true
+port:
+  tcp6:8000:
+    listening: true
+http:
+  http://localhost:8000:
+    status: 200
+    timeout: 5000
+file:
+  /app/reminder_bot:
+    exists: true
+  /app/pyproject.toml:
+    exists: true
+command:
+  python --version:
+    exit-status: 0
+    stdout:
+      - "/Python 3.13.*/"
+  whoami:
+    exit-status: 0
+    stdout:
+      - "nobody"

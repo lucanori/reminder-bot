@@ -1,23 +1,37 @@
 services:
   reminder-bot:
     build: .
-    container_name: reminder-bot
+    container_name: reminder-bot-local
     restart: unless-stopped
     ports:
-      - "5011:5011"
+      - "8000:8000"
     volumes:
       - ./data:/app/data
     environment:
-      - TIMEZONE=${TZ}
-      - UID=${PUID}
-      - GID=${PGID}
-      - DEBUG=false
-      - DATABASE_URL=sqlite:////app/data/reminders.db
-      - TELEGRAM_BOT_TOKEN=${REMINDER_BOT_TELEGRAM_TOKEN}
-      # Admin Interface Credentials (CHANGE THIS!)
-      - ADMIN_USER=${REMINDER_BOT_ADMIN_USER}
-      - ADMIN_PASSWORD=${REMINDER_BOT_ADMIN_PASSWORD}
-      # Bot Operation Mode (blocklist or whitelist)
-      - BOT_MODE=blocklist
-      # Flask Secret Key (Important for sessions - CHANGE THIS!)
+      # Admin Configuration
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      
+      # Bot Configuration
+      - BOT_MODE=blocklist # blocklist or whitelist
+      - DEFAULT_NOTIFICATION_INTERVAL=5
+      - MAX_NOTIFICATIONS_PER_REMINDER=10
+      
+      # Database Configuration
+      - DATABASE_URL=sqlite+aiosqlite:///data/reminders.db
+      
+      # General Configuration
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - TIMEZONE=${TZ}
+      
+      # Telegram Configuration
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=2)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

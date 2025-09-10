@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Reminder Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1><i class="bi bi-speedometer2"></i> Dashboard</h1>
+        <hr>
+    </div>
+</div>
+
+<div class="row" id="stats-row">
+    <div class="col-12">
+        <div class="d-flex justify-content-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-info-circle"></i> System Information</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Bot Mode:</strong> <span class="badge bg-info">Blocklist</span></p>
+                <p><strong>Version:</strong> 2</p>
+                <p><strong>Status:</strong> <span id="bot-status" class="badge bg-success">Running</span></p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-gear"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <a href="{{ url_for('users') }}" class="btn btn-outline-primary mb-2 w-100">
+                    <i class="bi bi-people"></i> Manage Users
+                </a>
+                <button class="btn btn-outline-info w-100" onclick="refreshStats()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh Statistics
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadStats() {
+    fetch('/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            const statsRow = document.getElementById('stats-row');
+            statsRow.innerHTML = `
+                <div class="col-md-3">
+                    <div class="card text-white bg-primary">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-people"></i> Total Users</h5>
+                            <h2 class="card-text">${data.users.total_users}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-white bg-success">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-person-check"></i> Active Users</h5>
+                            <h2 class="card-text">${data.users.active_users}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-white bg-warning">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-bell"></i> Active Reminders</h5>
+                            <h2 class="card-text">${data.reminders.total_active}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-white bg-info">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-person-plus"></i> New Users (30d)</h5>
+                            <h2 class="card-text">${data.users.recent_users}</h2>
+                        </div>
+                    </div>
+                </div>
+            `;
+        })
+        .catch(error => {
+            console.error('Error loading stats:', error);
+            document.getElementById('stats-row').innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Failed to load statistics
+                    </div>
+                </div>
+            `;
+        });
+}
+
+function refreshStats() {
+    const statsRow = document.getElementById('stats-row');
+    statsRow.innerHTML = `
+        <div class="col-12">
+            <div class="d-flex justify-content-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    `;
+    loadStats();
+}
+
+document.addEventListener('DOMContentLoaded', loadStats);
+</script>
+{% endblock %}

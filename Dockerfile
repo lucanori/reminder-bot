@@ -1,42 +1,50 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
+# syntax=docker/dockerfile:1
 
-# Install supervisor and gosu (for su-exec)
-RUN apt-get update && apt-get install -y --no-install-recommends supervisor gosu procps && rm -rf /var/lib/apt/lists/*
+FROM docker.io/library/python:3.13-alpine3.21
 
-# Set default UID, GID, UMASK
-ENV UID=1000
-ENV GID=1000
-ENV UMASK=0022
+ARG VERSION=1.5.0
 
-# Set the working directory in the container
+ENV \
+    CRYPTOGRAPHY_DONT_BUILD_RUST=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_NO_CACHE=true \
+    UV_SYSTEM_PYTHON=true \
+    PYTHONPATH=/app \
+    TZ=UTC \
+    SETUPTOOLS_SCM_PRETEND_VERSION_FOR_TELEGRAM_REMINDER_BOT=${VERSION}
+
+USER root
 WORKDIR /app
 
-# Copy the requirements file first to leverage Docker cache
-COPY requirements.txt .
+RUN \
+    apk add --no-cache \
+        bash \
+        ca-certificates \
+        catatonit \
+        coreutils \
+        jq \
+        smartmontools \
+        tzdata \
+    && \
+    pip install uv
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock* ./
 
-# Copy the rest of the application code
+RUN uv sync --frozen \
+    && chown -R nobody:nogroup /app && chmod -R 755 /app
+
 COPY . .
+COPY entrypoint.sh /
+RUN chmod +x /entrypoint.sh \
+    && chown -R nobody:nogroup /app && chmod -R 755 /app
 
-# Ensure correct ownership and permissions for the app directory
-RUN chown -R ${UID}:${GID} /app && chmod -R u+rwX,go+rX /app && chmod +x /app/*.py
+USER nobody:nogroup
 
-# Copy supervisor configuration
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+EXPOSE 8000
 
-# Copy the entrypoint script and make it executable
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Expose the admin app port
-EXPOSE 5011
-
-# Set the entrypoint
-ENTRYPOINT ["entrypoint.sh"]
-
-# Default command to run the application
-# Default command to run supervisor, which will start the bot and admin app
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+ENTRYPOINT ["/usr/bin/catatonit", "--", "/entrypoint.sh"]
