@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     pull_policy: always  # optional: always pull latest image
     volumes:
-      - ${APPDATA}:/app/data:rw
+      - ${APPDATA}/reminder-bot:/app/data:rw
     # un-comment ports declaration if you want to expose the webui directly
     # ports:
     #   - "8000:8000"
