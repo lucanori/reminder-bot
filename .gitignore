@@ -57,3 +57,6 @@ logs/
 .idea/
 *.swp
 .DS_Store
+
+# Thoughts shared status directory
+thoughts/shared/status/
