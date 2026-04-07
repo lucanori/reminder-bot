@@ -106,11 +106,14 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-people-fill"></i> Active Users ({{ active_users|length }})</h5>
+    </div>
     <div class="card-body">
-        {% if users %}
+        {% if active_users %}
         <div class="table-responsive">
-            <table class="user-table" id="usersTable">
+            <table class="user-table" id="activeUsersTable">
                 <thead>
                     <tr>
                         <th>Telegram ID</th>
@@ -121,13 +124,11 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for user in users %}
+                    {% for user in active_users %}
                     <tr data-user-id="{{ user.telegram_id }}">
                         <td>{{ user.telegram_id }}</td>
                         <td>
-                            {% if user.is_blocked %}
-                                <span class="badge badge-blocked">Blocked</span>
-                            {% elif user.is_whitelisted %}
+                            {% if user.is_whitelisted %}
                                 <span class="badge badge-whitelisted">Whitelisted</span>
                             {% else %}
                                 <span class="badge badge-normal">Normal</span>
@@ -137,15 +138,9 @@
                         <td>{{ user.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
                         <td>
                             {% if bot_mode == 'blocklist' %}
-                                {% if user.is_blocked %}
-                                    <a href="{{ url_for('unblock_user', user_id=user.telegram_id) }}" class="btn-action btn-unblock" onclick="return confirm('Unblock user {{ user.telegram_id }}?')">
-                                        <i class="bi bi-unlock"></i> Unblock
-                                    </a>
-                                {% else %}
-                                    <a href="{{ url_for('block_user', user_id=user.telegram_id) }}" class="btn-action btn-block" onclick="return confirm('Block user {{ user.telegram_id }}?')">
-                                        <i class="bi bi-lock"></i> Block
-                                    </a>
-                                {% endif %}
+                                <a href="{{ url_for('block_user', user_id=user.telegram_id) }}" class="btn-action btn-block" onclick="return confirm('Block user {{ user.telegram_id }}?')">
+                                    <i class="bi bi-lock"></i> Block
+                                </a>
                             {% elif bot_mode == 'whitelist' %}
                                 {% if user.is_whitelisted %}
                                     <a href="{{ url_for('remove_whitelist', user_id=user.telegram_id) }}" class="btn-action btn-remove-whitelist" onclick="return confirm('Remove user {{ user.telegram_id }} from whitelist?')">
@@ -163,10 +158,53 @@
                 </tbody>
             </table>
         </div>
-        <p class="text-muted mt-3">Total users: {{ users|length }}</p>
         {% else %}
         <div class="alert alert-info">
-            <i class="bi bi-info-circle"></i> No users found
+            <i class="bi bi-info-circle"></i> No active users
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-danger text-white">
+        <h5 class="mb-0"><i class="bi bi-slash-circle"></i> Blocked Users ({{ blocked_users|length }})</h5>
+    </div>
+    <div class="card-body">
+        {% if blocked_users %}
+        <div class="table-responsive">
+            <table class="user-table" id="blockedUsersTable">
+                <thead>
+                    <tr>
+                        <th>Telegram ID</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in blocked_users %}
+                    <tr data-user-id="{{ user.telegram_id }}">
+                        <td>{{ user.telegram_id }}</td>
+                        <td>
+                            <span class="badge badge-blocked">Blocked</span>
+                        </td>
+                        <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>{{ user.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            <a href="{{ url_for('unblock_user', user_id=user.telegram_id) }}" class="btn-action btn-unblock" onclick="return confirm('Unblock user {{ user.telegram_id }}?')">
+                                <i class="bi bi-unlock"></i> Unblock
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> No blocked users
         </div>
         {% endif %}
     </div>
