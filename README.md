@@ -24,23 +24,27 @@ Advanced Telegram bot for task reminders with persistent notifications, built fo
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone <repository-url>
 cd reminder-bot
 ```
 
-2. Copy and configure environment variables:
+1. Copy and configure environment variables:
+
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
-3. Install dependencies:
+1. Install dependencies:
+
 ```bash
 uv sync
 ```
 
-4. Run the bot:
+1. Run the bot:
+
 ```bash
 uv run python -m reminder_bot
 ```
@@ -48,11 +52,13 @@ uv run python -m reminder_bot
 ### Docker Deployment
 
 1. Build the image locally:
+
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-2. Run the official container from GHCR.io:
+1. Run the official container from GHCR.io:
+
 ```bash
 docker compose up -d
 ```
@@ -90,6 +96,7 @@ The project uses **automatic semantic versioning** based on Git tags:
 - **No hardcoded versions**: Version is determined dynamically from Git history
 
 To create a release:
+
 ```bash
 git tag v1.2.3
 git push origin v1.2.3
@@ -124,6 +131,7 @@ The bot supports two operational modes for receiving Telegram updates:
 **Configuration**: Set `TELEGRAM_WEBHOOK_URL=https://yourdomain.com/webhook`
 
 **Requirements**:
+
 - Public domain with valid SSL certificate
 - Server accessible from internet on port 443 or 8443
 - Reverse proxy (nginx) recommended for SSL termination
@@ -133,6 +141,7 @@ The bot supports two operational modes for receiving Telegram updates:
 The bot features an intelligent escalation system:
 
 ### Escalation Timeline
+
 - **1st notification**: 5 minutes after scheduled time
 - **2nd notification**: 5 minutes later (10 min total)
 - **3rd notification**: 10 minutes later (20 min total)  
@@ -141,6 +150,7 @@ The bot features an intelligent escalation system:
 - **6th+ notifications**: 30 minutes later (max interval cap)
 
 ### Automatic Management
+
 - **Max attempts**: 10 notifications by default (configurable 1-50)
 - **Auto-suspension**: Reminders automatically suspend after max attempts
 - **Clean messaging**: Previous notifications deleted to prevent spam
@@ -187,7 +197,7 @@ Default admin credentials are set via environment variables.
 
 The bot follows a clean, modular architecture:
 
-```
+```text
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Telegram API  │◄──►│   Bot Service   │◄──►│   Database      │
 └─────────────────┘    └─────────────────┘    │   (SQLite)      │
@@ -234,7 +244,7 @@ ruff check .
 
 ### Project Structure
 
-```
+```text
 reminder-bot/
 ├── reminder_bot/          # Main application code
 │   ├── models/           # Data models and DTOs
@@ -321,17 +331,20 @@ Structured JSON logging with correlation IDs:
 ### Docker Production Setup
 
 1. Create production environment file:
+
 ```bash
 cp .env.example .env.prod
 # Configure with production values
 ```
 
-2. Deploy with Docker Compose:
+1. Deploy with Docker Compose:
+
 ```bash
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
-3. Monitor logs:
+1. Monitor logs:
+
 ```bash
 docker-compose logs -f reminder-bot
 ```
@@ -364,10 +377,12 @@ docker-compose up -d
 
 1. **Bot not responding**: Check `TELEGRAM_BOT_TOKEN` is correct
 2. **Database read-only errors**: Ensure `./data` directory and files have correct permissions:
+
    ```bash
    sudo chown -R 65534:65534 data/
    sudo chmod 755 data/ && sudo chmod 664 data/reminders.db
    ```
+
 3. **Admin interface 503**: Check if bot service is running  
 4. **Notifications not sent**: Verify scheduler is running in health check
 5. **Python 3.13 compatibility**: Ensure using `python-telegram-bot>=22.0` (auto-handled by uv)
