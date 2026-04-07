@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from typing import Dict, Any
+from sqlalchemy import text
 from ..utils.database import get_async_session
 from ..utils.logging import get_logger
 from ..utils.version import get_version
@@ -17,7 +18,7 @@ class HealthChecker:
             "status": "healthy",
             "timestamp": datetime.utcnow().isoformat(),
             "version": get_version(),
-            "components": {}
+            "components": {},
         }
 
         try:
@@ -32,7 +33,7 @@ class HealthChecker:
                 health_status["components"]["scheduler"] = scheduler_health
 
             overall_healthy = all(
-                component.get("healthy", False) 
+                component.get("healthy", False)
                 for component in health_status["components"].values()
             )
 
@@ -49,13 +50,13 @@ class HealthChecker:
     async def _check_database_health(self) -> Dict[str, Any]:
         try:
             async with get_async_session() as session:
-                result = await session.execute("SELECT 1")
-                await result.fetchone()
+                result = await session.execute(text("SELECT 1"))
+                result.scalar_one_or_none()
 
             return {
                 "healthy": True,
                 "message": "Database connection successful",
-                "response_time_ms": 0
+                "response_time_ms": 0,
             }
 
         except Exception as e:
@@ -63,52 +64,45 @@ class HealthChecker:
             return {
                 "healthy": False,
                 "message": f"Database connection failed: {str(e)}",
-                "response_time_ms": 0
+                "response_time_ms": 0,
             }
 
     async def _check_bot_health(self) -> Dict[str, Any]:
         try:
             if not self.bot_service or not self.bot_service.bot:
-                return {
-                    "healthy": False,
-                    "message": "Bot not initialized"
-                }
+                return {"healthy": False, "message": "Bot not initialized"}
 
             bot_info = await self.bot_service.bot.get_me()
-            
+
             return {
                 "healthy": True,
                 "message": "Bot is responsive",
                 "bot_username": bot_info.username,
-                "bot_id": bot_info.id
+                "bot_id": bot_info.id,
             }
 
         except Exception as e:
             logger.error("bot_health_check_failed", error=str(e))
-            return {
-                "healthy": False,
-                "message": f"Bot health check failed: {str(e)}"
-            }
+            return {"healthy": False, "message": f"Bot health check failed: {str(e)}"}
 
     async def _check_scheduler_health(self) -> Dict[str, Any]:
         try:
             if not self.bot_service or not self.bot_service.job_scheduler:
-                return {
-                    "healthy": False,
-                    "message": "Scheduler not initialized"
-                }
+                return {"healthy": False, "message": "Scheduler not initialized"}
 
             scheduler_running = self.bot_service.job_scheduler.scheduler.running
-            
+
             return {
                 "healthy": scheduler_running,
-                "message": "Scheduler is running" if scheduler_running else "Scheduler is not running",
-                "running": scheduler_running
+                "message": "Scheduler is running"
+                if scheduler_running
+                else "Scheduler is not running",
+                "running": scheduler_running,
             }
 
         except Exception as e:
             logger.error("scheduler_health_check_failed", error=str(e))
             return {
                 "healthy": False,
-                "message": f"Scheduler health check failed: {str(e)}"
+                "message": f"Scheduler health check failed: {str(e)}",
             }
