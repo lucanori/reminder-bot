@@ -1,10 +1,10 @@
-import pytest
-import asyncio
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, timedelta
+
+import pytest
 from reminder_bot.bot_service import BotService
-from reminder_bot.models.dtos import ReminderCreateDTO
 from reminder_bot.config import Settings
+from reminder_bot.models.dtos import ReminderCreateDTO
 
 
 @pytest.mark.asyncio
@@ -34,7 +34,6 @@ async def test_full_system_integration():
 @pytest.mark.asyncio
 async def test_health_checker_integration():
     from reminder_bot.utils.health import HealthChecker
-    from reminder_bot.utils.database import get_async_session
 
     health_checker = HealthChecker()
 
@@ -46,10 +45,10 @@ async def test_health_checker_integration():
 
 @pytest.mark.asyncio
 async def test_service_integration_workflow():
-    from reminder_bot.services.user_service import UserService
-    from reminder_bot.services.reminder_service import ReminderService
-    from reminder_bot.repositories.user_repository import UserRepository
     from reminder_bot.repositories.reminder_repository import ReminderRepository
+    from reminder_bot.repositories.user_repository import UserRepository
+    from reminder_bot.services.reminder_service import ReminderService
+    from reminder_bot.services.user_service import UserService
     from reminder_bot.utils.database import get_async_session
 
     async with get_async_session() as session:
@@ -113,12 +112,11 @@ async def test_error_recovery_integration():
 @pytest.mark.asyncio
 async def test_transformation_utilities():
     """Test data transformation utilities"""
+    from reminder_bot.models.dtos import ReminderCreateDTO
     from reminder_bot.utils.transformers import (
         entity_to_reminder_dto,
         reminder_create_dto_to_entity,
     )
-    from reminder_bot.models.entities import ReminderEntity
-    from reminder_bot.models.dtos import ReminderCreateDTO
 
     create_dto = ReminderCreateDTO(
         user_id=123456,

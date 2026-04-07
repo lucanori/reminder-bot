@@ -1,9 +1,7 @@
 import asyncio
+
 import pytest
-from datetime import datetime
-from reminder_bot.models.entities import UserEntity
 from reminder_bot.models.dtos import UserPreferencesDTO
-from reminder_bot.utils.exceptions import DatabaseException
 
 
 @pytest.mark.asyncio

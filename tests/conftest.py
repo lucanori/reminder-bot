@@ -1,16 +1,16 @@
-import pytest
 import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import event
-from reminder_bot.models.entities import Base, UserEntity, ReminderEntity
-from reminder_bot.repositories.user_repository import UserRepository
+
+import pytest
+from reminder_bot.models.entities import Base, ReminderEntity, UserEntity
 from reminder_bot.repositories.reminder_repository import ReminderRepository
-from reminder_bot.services.user_service import UserService
-from reminder_bot.services.reminder_service import ReminderService
+from reminder_bot.repositories.user_repository import UserRepository
 from reminder_bot.services.notification_service import NotificationService
+from reminder_bot.services.reminder_service import ReminderService
+from reminder_bot.services.user_service import UserService
 from reminder_bot.utils.scheduler import JobScheduler
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture(scope="session")

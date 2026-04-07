@@ -1,9 +1,8 @@
-import pytest
-import asyncio
 from datetime import datetime, timedelta
+
+import pytest
 from reminder_bot.models.dtos import ReminderCreateDTO, ReminderUpdateDTO
 from reminder_bot.models.entities import ReminderStatus
-from reminder_bot.utils.exceptions import ValidationException
 
 
 @pytest.mark.asyncio

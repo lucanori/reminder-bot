@@ -1,8 +1,8 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from telegram.error import TelegramError
-from reminder_bot.models.entities import ReminderStatus
 from reminder_bot.utils.transformers import entity_to_reminder_dto
+from telegram.error import TelegramError
 
 
 @pytest.mark.asyncio
