@@ -1,30 +1,34 @@
 import asyncio
+from collections.abc import Coroutine
+from concurrent.futures import Future
+from typing import Any, TypeVar
+
 from telegram import Bot, Update
 from telegram.ext import (
     Application,
-    CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
+    CommandHandler,
     ConversationHandler,
+    MessageHandler,
     filters,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from .config import settings
-from .utils.database import get_async_session, engine
+from .handlers.callback_handlers import CallbackHandlers
+from .handlers.command_handlers import SET_INTERVAL, SET_TEXT, SET_TIME, CommandHandlers
+from .models.entities import Base
+from .services.notification_service import NotificationService
+from .services.reminder_service import ReminderService
+from .services.user_service import UserService
+from .utils.database import engine, get_async_session
+from .utils.exceptions import ReminderBotException
 from .utils.logging import configure_logging, get_logger
 from .utils.scheduler import JobScheduler
-from .repositories.user_repository import UserRepository
-from .repositories.reminder_repository import ReminderRepository
-from .services.reminder_service import ReminderService
-from .services.notification_service import NotificationService
-from .services.user_service import UserService
-from .handlers.command_handlers import CommandHandlers, SET_TEXT, SET_TIME, SET_INTERVAL
-from .handlers.callback_handlers import CallbackHandlers
-from .models.entities import Base
-from .utils.exceptions import ReminderBotException
 from .utils.version import get_version
 
 logger = get_logger()
+
+T = TypeVar("T")
 
 
 class BotService:
@@ -37,6 +41,8 @@ class BotService:
         self.user_service: UserService = None
         self.command_handlers: CommandHandlers = None
         self.callback_handlers: CallbackHandlers = None
+        self._main_loop: asyncio.AbstractEventLoop | None = None
+        self._polling_task: asyncio.Task | None = None
 
     async def initialize(self) -> None:
         try:
@@ -73,17 +79,24 @@ class BotService:
     async def start_polling_non_blocking(self) -> None:
         try:
             logger.info("bot_starting_non_blocking")
+
+            # Store reference to the main event loop for cross-thread access
+            self._main_loop = asyncio.get_running_loop()
+            logger.info("main_event_loop_stored")
+
             await self.job_scheduler.start()
 
             if settings.telegram_webhook_url:
                 await self._setup_webhook()
             else:
-                # PTB v22+ compatible non-blocking polling
-                # run_polling handles initialize/start internally when used this way
-                import asyncio
+                # PTB v22+ proper lifecycle: initialize and start before polling
+                await self.application.initialize()
+                await self.application.start()
+                logger.info("telegram_application_initialized_and_started")
 
-                polling_task = asyncio.create_task(
-                    self.application.run_polling(
+                # Start polling as a background task
+                self._polling_task = asyncio.create_task(
+                    self.application.updater.start_polling(
                         drop_pending_updates=True, allowed_updates=Update.ALL_TYPES
                     )
                 )
@@ -97,6 +110,14 @@ class BotService:
         try:
             logger.info("bot_stopping")
 
+            # Cancel polling task if running
+            if self._polling_task and not self._polling_task.done():
+                self._polling_task.cancel()
+                try:
+                    await self._polling_task
+                except asyncio.CancelledError:
+                    logger.info("polling_task_cancelled")
+
             if self.application:
                 await self.application.stop()
                 await self.application.shutdown()
@@ -107,6 +128,7 @@ class BotService:
             if engine:
                 await engine.dispose()
 
+            self._main_loop = None
             logger.info("bot_stopped")
 
         except Exception as e:
@@ -129,7 +151,9 @@ class BotService:
 
         self.user_service = UserService(None)
         self.reminder_service = ReminderService(None)
-        self.notification_service = NotificationService(self.bot, None)
+        self.notification_service = NotificationService(
+            self.bot, None, self.user_service
+        )
         self.job_scheduler = JobScheduler(self.notification_service, None)
 
         self.command_handlers = CommandHandlers(
@@ -200,7 +224,7 @@ class BotService:
         self.application.add_handler(
             CallbackQueryHandler(
                 self.callback_handlers.handle_menu_callback,
-                pattern=r"^(cmd_(set|view|delete|help)|template_\w+|back_to_menu|time_\w+_[\d:]+|create_\w+_[\d:]+_\d+|custom_\w+|customtime_[\d:]+|custominterval_\d+|custom_time_manual|custom_interval_manual|delete_\d+|use_set_command)$",
+                pattern=r"^(cmd_(set|view|delete|help|timezone)|template_\w+|back_to_menu|time_\w+_[\d:]+|create_\w+_[\d:]+_\d+|custom_\w+|customtime_[\d:]+|custominterval_\d+|custom_time_manual|custom_interval_manual|delete_\d+|use_set_command|tz_[A-Za-z_/]+|tz_manual)$",
             )
         )
 
@@ -256,6 +280,28 @@ class BotService:
                 )
             except Exception as e:
                 logger.error("error_notification_failed", error=str(e))
+
+    def run_coroutine_threadsafe(self, coro: Coroutine[Any, Any, T]) -> T:
+        """Run a coroutine on the main event loop from a different thread.
+
+        This method allows Flask routes (running in a daemon thread) to safely
+        execute async code on the bot's main event loop without creating new
+        event loops or using asyncio.run().
+
+        Args:
+            coro: The coroutine to execute
+
+        Returns:
+            The result of the coroutine
+
+        Raises:
+            RuntimeError: If the main loop is not available
+        """
+        if self._main_loop is None or self._main_loop.is_closed():
+            raise RuntimeError("Main event loop is not available")
+
+        future: Future[T] = asyncio.run_coroutine_threadsafe(coro, self._main_loop)
+        return future.result(timeout=30)  # 30 second timeout for safety
 
     async def health_check(self) -> dict:
         try:

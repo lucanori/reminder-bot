@@ -1,23 +1,22 @@
-import asyncio
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
+
 import pytz
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import TelegramError
-from telegram import CallbackQuery
+from telegram import Bot, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Forbidden, TelegramError
+
+from ..models.dtos import NotificationResult, ReminderDTO
 from ..repositories.reminder_repository import ReminderRepository
-from ..models.dtos import ReminderDTO, NotificationResult
-from ..models.entities import ReminderStatus
-from ..utils.logging import get_logger
 from ..utils.exceptions import TelegramAPIException
+from ..utils.logging import get_logger
 
 logger = get_logger()
 
 
 class NotificationService:
-    def __init__(self, bot: Bot, reminder_repo: ReminderRepository):
+    def __init__(self, bot: Bot, reminder_repo: ReminderRepository, user_service=None):
         self.bot = bot
         self.reminder_repo = reminder_repo
+        self.user_service = user_service
 
     async def send_reminder_notification(
         self, reminder: ReminderDTO
@@ -80,6 +79,43 @@ class NotificationService:
                 success=True,
             )
 
+        except Forbidden as e:
+            logger.error(
+                "telegram_notification_forbidden",
+                reminder_id=reminder.id,
+                chat_id=reminder.chat_id,
+                error=str(e),
+            )
+            if self.user_service:
+                try:
+                    await self.user_service.block_user(reminder.user_id)
+                    logger.info(
+                        "user_auto_blocked",
+                        user_id=reminder.user_id,
+                        reason="bot_blocked",
+                    )
+                    cancelled_count = (
+                        await self.reminder_repo.cancel_all_reminders_for_user(
+                            reminder.user_id
+                        )
+                    )
+                    logger.info(
+                        "reminders_cancelled_for_blocked_user",
+                        user_id=reminder.user_id,
+                        cancelled_count=cancelled_count,
+                    )
+                except Exception as block_err:
+                    logger.error(
+                        "auto_block_user_failed",
+                        error=str(block_err),
+                        user_id=reminder.user_id,
+                    )
+            return NotificationResult(
+                message_id=0,
+                sent_at=datetime.now(pytz.UTC).replace(tzinfo=None),
+                success=False,
+                error=f"blocked:{str(e)}",
+            )
         except TelegramError as e:
             logger.error(
                 "telegram_notification_failed",
@@ -151,10 +187,11 @@ class NotificationService:
         )
 
         if success:
-            from ..config import settings
-
-            tz = pytz.timezone(settings.timezone)
-            now_local = datetime.now(tz)
+            if self.user_service:
+                user_tz = await self.user_service.get_user_timezone(reminder.user_id)
+            else:
+                user_tz = pytz.UTC
+            now_local = datetime.now(user_tz)
             completion_text = f"✅ <b>Completed:</b> {reminder.text}\n⏰ {now_local.strftime('%H:%M')}"
 
             try:
@@ -217,7 +254,7 @@ class NotificationService:
         if reminder.interval_days > 1:
             text += f"\n🔄 Repeats every {reminder.interval_days} day(s)"
         elif reminder.interval_days == 1:
-            text += f"\n🔄 Daily reminder"
+            text += "\n🔄 Daily reminder"
 
         return text
 
@@ -227,8 +264,8 @@ class NotificationService:
                 f"⚠️ <b>Final Warning</b>\n\n"
                 f"Reminder: {reminder.text}\n\n"
                 f"This reminder has reached the maximum number of attempts "
-                f"({reminder.max_notifications}) and will be suspended.\n\n"
-                f"You can reactivate it later from your reminder list."
+                f"({reminder.max_notifications}).\n\n"
+                f"Reminders will continue at the scheduled time."
             )
 
             await self.bot.send_message(

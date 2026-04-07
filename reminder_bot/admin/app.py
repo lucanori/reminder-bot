@@ -1,35 +1,34 @@
-import asyncio
 from datetime import datetime
+
 from flask import (
     Flask,
-    render_template,
-    request,
-    redirect,
-    url_for,
     flash,
     jsonify,
-    session,
+    redirect,
+    render_template,
+    request,
     send_from_directory,
+    url_for,
 )
 from flask_login import (
     LoginManager,
     UserMixin,
-    login_user,
-    login_required,
-    logout_user,
     current_user,
+    login_required,
+    login_user,
+    logout_user,
 )
-from werkzeug.security import check_password_hash, generate_password_hash
-from ..config import settings
-from ..utils.database import get_async_session
-from ..utils.logging import get_logger
-from ..utils.health import HealthChecker
-from ..utils.version import get_version
-from ..repositories.user_repository import UserRepository
-from ..repositories.reminder_repository import ReminderRepository
-from ..services.user_service import UserService
-from ..services.reminder_service import ReminderService
+
 from ..bot_service import BotService
+from ..config import settings
+from ..repositories.reminder_repository import ReminderRepository
+from ..repositories.user_repository import UserRepository
+from ..services.reminder_service import ReminderService
+from ..services.user_service import UserService
+from ..utils.database import get_async_session
+from ..utils.health import HealthChecker
+from ..utils.logging import get_logger
+from ..utils.version import get_version
 
 logger = get_logger()
 
@@ -40,7 +39,7 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
 
-bot_service_instance = None
+bot_service_instance: BotService | None = None
 
 
 class AdminUser(UserMixin):
@@ -53,6 +52,20 @@ def load_user(user_id):
     if user_id == settings.admin_username:
         return AdminUser(user_id)
     return None
+
+
+def run_async_safely(coro):
+    """Execute an async coroutine safely using the bot's main event loop.
+
+    This helper ensures Flask routes (running in a daemon thread) can execute
+    async code without creating new event loops or using asyncio.run().
+    """
+    global bot_service_instance
+
+    if bot_service_instance is None:
+        raise RuntimeError("Bot service not initialized")
+
+    return bot_service_instance.run_coroutine_threadsafe(coro)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -120,19 +133,7 @@ def api_stats():
                     },
                 }
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, get_stats())
-                    stats = future.result()
-            else:
-                stats = loop.run_until_complete(get_stats())
-        except RuntimeError:
-            stats = asyncio.run(get_stats())
-
+        stats = run_async_safely(get_stats())
         return jsonify(stats)
 
     except Exception as e:
@@ -150,41 +151,43 @@ def users():
                 user_repo = UserRepository(session)
                 user_service = UserService(user_repo)
                 all_users = await user_service.get_all_users()
-                # Sort by created_at descending
-                sorted_users = sorted(
-                    all_users, key=lambda u: u.created_at, reverse=True
-                )
-                return sorted_users
+                return all_users
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
+        users_list = run_async_safely(get_users())
 
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, get_users())
-                    users_list = future.result()
-            else:
-                users_list = loop.run_until_complete(get_users())
-        except RuntimeError:
-            users_list = asyncio.run(get_users())
+        active_users = sorted(
+            [u for u in users_list if not u.is_blocked],
+            key=lambda u: u.created_at,
+            reverse=True,
+        )
+        blocked_users = sorted(
+            [u for u in users_list if u.is_blocked],
+            key=lambda u: u.created_at,
+            reverse=True,
+        )
 
         return render_template(
-            "users.html", bot_mode=settings.bot_mode, users=users_list
+            "users.html",
+            bot_mode=settings.bot_mode,
+            active_users=active_users,
+            blocked_users=blocked_users,
         )
 
     except Exception as e:
         logger.error("admin_users_view_failed", error=str(e), exc_info=True)
         flash("Failed to load users", "error")
-        return render_template("users.html", bot_mode=settings.bot_mode, users=[])
+        return render_template(
+            "users.html",
+            bot_mode=settings.bot_mode,
+            active_users=[],
+            blocked_users=[],
+        )
 
 
 @app.route("/block_user/<int:user_id>", methods=["GET"])
 @login_required
 def block_user(user_id):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
         async def do_block():
             async with get_async_session() as session:
@@ -192,8 +195,7 @@ def block_user(user_id):
                 user_service = UserService(user_repo)
                 return await user_service.block_user(user_id)
 
-        success = loop.run_until_complete(do_block())
-        loop.close()
+        success = run_async_safely(do_block())
 
         if success:
             logger.info("admin_user_blocked", admin=current_user.id, user_id=user_id)
@@ -212,8 +214,6 @@ def block_user(user_id):
 @login_required
 def unblock_user(user_id):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
         async def do_unblock():
             async with get_async_session() as session:
@@ -221,8 +221,7 @@ def unblock_user(user_id):
                 user_service = UserService(user_repo)
                 return await user_service.unblock_user(user_id)
 
-        success = loop.run_until_complete(do_unblock())
-        loop.close()
+        success = run_async_safely(do_unblock())
 
         if success:
             logger.info("admin_user_unblocked", admin=current_user.id, user_id=user_id)
@@ -241,8 +240,6 @@ def unblock_user(user_id):
 @login_required
 def whitelist_user(user_id):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
         async def do_whitelist():
             async with get_async_session() as session:
@@ -250,8 +247,7 @@ def whitelist_user(user_id):
                 user_service = UserService(user_repo)
                 return await user_service.whitelist_user(user_id)
 
-        success = loop.run_until_complete(do_whitelist())
-        loop.close()
+        success = run_async_safely(do_whitelist())
 
         if success:
             logger.info(
@@ -272,8 +268,6 @@ def whitelist_user(user_id):
 @login_required
 def remove_whitelist(user_id):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
         async def do_remove_whitelist():
             async with get_async_session() as session:
@@ -281,8 +275,7 @@ def remove_whitelist(user_id):
                 user_service = UserService(user_repo)
                 return await user_service.remove_from_whitelist(user_id)
 
-        success = loop.run_until_complete(do_remove_whitelist())
-        loop.close()
+        success = run_async_safely(do_remove_whitelist())
 
         if success:
             logger.info(
@@ -316,18 +309,7 @@ def api_users():
                 user_service = UserService(user_repo)
                 return await user_service.get_all_users()
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, get_users())
-                    users = future.result()
-            else:
-                users = loop.run_until_complete(get_users())
-        except RuntimeError:
-            users = asyncio.run(get_users())
+        users = run_async_safely(get_users())
 
         start = (page - 1) * per_page
         end = start + per_page
@@ -364,8 +346,6 @@ def api_users():
 @login_required
 def api_block_user(user_id):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
         async def block_user():
             async with get_async_session() as session:
@@ -373,8 +353,7 @@ def api_block_user(user_id):
                 user_service = UserService(user_repo)
                 return await user_service.block_user(user_id)
 
-        success = loop.run_until_complete(block_user())
-        loop.close()
+        success = run_async_safely(block_user())
 
         if success:
             logger.info("admin_user_blocked", admin=current_user.id, user_id=user_id)
@@ -391,8 +370,6 @@ def api_block_user(user_id):
 @login_required
 def api_unblock_user(user_id):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
         async def unblock_user():
             async with get_async_session() as session:
@@ -400,8 +377,7 @@ def api_unblock_user(user_id):
                 user_service = UserService(user_repo)
                 return await user_service.unblock_user(user_id)
 
-        success = loop.run_until_complete(unblock_user())
-        loop.close()
+        success = run_async_safely(unblock_user())
 
         if success:
             logger.info("admin_user_unblocked", admin=current_user.id, user_id=user_id)
@@ -445,7 +421,6 @@ def health():
                 "bot_connected": False,
             }
 
-            # Database check
             try:
                 from sqlalchemy import text
 
@@ -456,13 +431,11 @@ def health():
                 logger.error("health_check_database_failed", error=str(db_err))
                 health_status["status"] = "unhealthy"
 
-            # Bot and scheduler checks via HealthChecker if available
             if bot_service_instance:
                 try:
                     health_checker = HealthChecker(bot_service_instance)
                     detailed_health = await health_checker.comprehensive_health_check()
 
-                    # Merge component statuses
                     components = detailed_health.get("components", {})
                     if "bot" in components:
                         health_status["bot_connected"] = components["bot"].get(
@@ -473,31 +446,18 @@ def health():
                             "scheduler"
                         ].get("healthy", False)
 
-                    # Overall status from health checker
                     health_status["status"] = detailed_health.get("status", "healthy")
 
                 except Exception as bot_err:
                     logger.error("health_check_bot_failed", error=str(bot_err))
                     health_status["status"] = "degraded"
 
-            # Determine overall status
             if not health_status["database_connected"]:
                 health_status["status"] = "unhealthy"
 
             return health_status
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, check_health())
-                    health_status = future.result()
-            else:
-                health_status = loop.run_until_complete(check_health())
-        except RuntimeError:
-            health_status = asyncio.run(check_health())
+        health_status = run_async_safely(check_health())
 
         status_code = 200 if health_status["status"] == "healthy" else 503
         return jsonify(health_status), status_code

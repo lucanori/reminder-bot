@@ -4,10 +4,11 @@ import asyncio
 import signal
 import sys
 import threading
+
+from .admin.app import app as admin_app
+from .admin.app import set_bot_service
 from .bot_service import BotService
-from .admin.app import app as admin_app, set_bot_service
 from .utils.logging import get_logger
-from .config import settings
 
 logger = get_logger()
 bot_service = None

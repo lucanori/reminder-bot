@@ -1,17 +1,20 @@
 import asyncio
-from typing import Callable, Any, Optional, Dict
-from datetime import datetime, timedelta
-from telegram.error import TelegramError, RetryAfter, TimedOut, NetworkError
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
+
+from telegram.error import NetworkError, RetryAfter, TelegramError, TimedOut
+
+from ..utils.exceptions import DatabaseException, TelegramAPIException
 from ..utils.logging import get_logger
-from ..utils.exceptions import TelegramAPIException, DatabaseException
 
 logger = get_logger()
 
 
 class ErrorRecoveryService:
     def __init__(self):
-        self._circuit_breakers: Dict[str, 'CircuitBreaker'] = {}
-        self._retry_strategies: Dict[str, 'RetryStrategy'] = {}
+        self._circuit_breakers: dict[str, CircuitBreaker] = {}
+        self._retry_strategies: dict[str, RetryStrategy] = {}
 
     async def telegram_api_call_with_retry(
         self, 
@@ -186,7 +189,7 @@ class CircuitBreaker:
         self.timeout = timeout
         self.expected_exception = expected_exception
         self.failure_count = 0
-        self.last_failure_time: Optional[datetime] = None
+        self.last_failure_time: datetime | None = None
         self.state = "CLOSED"
 
     async def call(self, func: Callable, *args, **kwargs) -> Any:
@@ -207,7 +210,7 @@ class CircuitBreaker:
             
             return result
             
-        except self.expected_exception as e:
+        except self.expected_exception:
             self._record_failure()
             logger.warning(
                 "circuit_breaker_failure",

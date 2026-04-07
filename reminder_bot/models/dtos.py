@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, validator
 from datetime import datetime
-from typing import Optional
+
+from pydantic import BaseModel, Field, validator
+
 from .entities import ReminderStatus
 
 
@@ -34,8 +35,8 @@ class ReminderDTO(BaseModel):
     notification_count: int
     max_notifications: int
     notification_interval_minutes: int
-    last_message_id: Optional[int] = None
-    job_id: Optional[str] = None
+    last_message_id: int | None = None
+    job_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -47,7 +48,7 @@ class UserDTO(BaseModel):
     telegram_id: int
     is_blocked: bool = False
     is_whitelisted: bool = False
-    notification_preferences: Optional[str] = None
+    notification_preferences: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -59,16 +60,16 @@ class NotificationResult(BaseModel):
     message_id: int
     sent_at: datetime
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ReminderUpdateDTO(BaseModel):
-    text: Optional[str] = Field(None, min_length=1, max_length=500)
-    schedule_time: Optional[str] = Field(None, pattern=r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$')
-    interval_days: Optional[int] = Field(None, ge=0, le=365)
-    notification_interval_minutes: Optional[int] = Field(None, ge=1, le=60)
-    max_notifications: Optional[int] = Field(None, ge=1, le=50)
-    status: Optional[ReminderStatus] = None
+    text: str | None = Field(None, min_length=1, max_length=500)
+    schedule_time: str | None = Field(None, pattern=r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$')
+    interval_days: int | None = Field(None, ge=0, le=365)
+    notification_interval_minutes: int | None = Field(None, ge=1, le=60)
+    max_notifications: int | None = Field(None, ge=1, le=50)
+    status: ReminderStatus | None = None
 
     @validator('schedule_time')
     def validate_schedule_time(cls, v):

@@ -1,19 +1,18 @@
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from contextlib import asynccontextmanager
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from ..config import settings
-from ..utils.logging import get_logger
 from ..models.entities import Base
+from ..utils.logging import get_logger
 
 logger = get_logger()
 
-# For file-based SQLite, ensure the parent directory exists
 if settings.database_url.startswith("sqlite"):
-    # Parse the path from the URL (format: sqlite+aiosqlite:///path/to/db)
     db_path = settings.database_url.replace("sqlite+aiosqlite:///", "").replace(
         "sqlite:///", ""
     )
-    # Only create directory for file-based (not in-memory) databases
     if db_path and not db_path.startswith(":"):
         parent_dir = os.path.dirname(db_path)
         if parent_dir and not os.path.exists(parent_dir):
@@ -28,7 +27,6 @@ async_session_factory = async_sessionmaker(
     engine, expire_on_commit=False, class_=AsyncSession
 )
 
-# Module-level flag to track table initialization
 _tables_initialized = False
 
 
@@ -44,7 +42,6 @@ async def _init_tables() -> None:
 
 @asynccontextmanager
 async def get_async_session():
-    # Ensure tables are created before yielding the session
     await _init_tables()
     async with async_session_factory() as session:
         try:

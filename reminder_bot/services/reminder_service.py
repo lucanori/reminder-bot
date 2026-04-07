@@ -1,15 +1,16 @@
-from typing import List, Optional
-from datetime import datetime, timedelta
 import asyncio
+from datetime import datetime, timedelta
+
 import pytz
-from ..repositories.reminder_repository import ReminderRepository
-from ..utils.database import get_async_session
+
 from ..config import settings
 from ..models.dtos import ReminderCreateDTO, ReminderDTO, ReminderUpdateDTO
 from ..models.entities import ReminderStatus
-from ..utils.transformers import reminder_create_dto_to_entity, entity_to_reminder_dto
+from ..repositories.reminder_repository import ReminderRepository
+from ..utils.database import get_async_session
+from ..utils.exceptions import DatabaseException, ValidationException
 from ..utils.logging import get_logger
-from ..utils.exceptions import ValidationException, DatabaseException
+from ..utils.transformers import entity_to_reminder_dto, reminder_create_dto_to_entity
 
 logger = get_logger()
 
@@ -23,8 +24,17 @@ class ReminderService:
         try:
             entity = reminder_create_dto_to_entity(reminder_data)
 
+            user_tz = pytz.UTC
+            try:
+                from ..services.user_service import UserService
+
+                user_service = UserService(None)
+                user_tz = await user_service.get_user_timezone(reminder_data.user_id)
+            except Exception:
+                pass
+
             next_notification_time = self._calculate_next_notification_time(
-                reminder_data.schedule_time, reminder_data.interval_days
+                reminder_data.schedule_time, reminder_data.interval_days, user_tz
             )
             entity.next_notification = next_notification_time
 
@@ -53,11 +63,11 @@ class ReminderService:
             )
             raise ValidationException(f"Failed to create reminder: {e}")
 
-    async def get_user_reminders(self, user_id: int) -> List[ReminderDTO]:
+    async def get_user_reminders(self, user_id: int) -> list[ReminderDTO]:
         try:
             if self.reminder_repo is None:
-                from ..utils.database import get_async_session
                 from ..repositories.reminder_repository import ReminderRepository
+                from ..utils.database import get_async_session
 
                 async with get_async_session() as session:
                     reminder_repo = ReminderRepository(session)
@@ -70,7 +80,7 @@ class ReminderService:
             logger.error("get_user_reminders_failed", error=str(e), user_id=user_id)
             raise DatabaseException(f"Failed to get user reminders: {e}")
 
-    async def get_reminder_by_id(self, reminder_id: int) -> Optional[ReminderDTO]:
+    async def get_reminder_by_id(self, reminder_id: int) -> ReminderDTO | None:
         try:
             if self.reminder_repo is None:
                 async with get_async_session() as session:
@@ -86,7 +96,7 @@ class ReminderService:
 
     async def update_reminder(
         self, reminder_id: int, user_id: int, update_data: ReminderUpdateDTO
-    ) -> Optional[ReminderDTO]:
+    ) -> ReminderDTO | None:
         try:
             if self.reminder_repo is None:
                 async with get_async_session() as session:
@@ -207,10 +217,35 @@ class ReminderService:
                                         error=str(e),
                                     )
 
-                            base_time = entity.next_notification or datetime.utcnow()
-                            next_notification = base_time + timedelta(
+                            user_tz = pytz.UTC
+                            try:
+                                from ..services.user_service import UserService
+
+                                user_service = UserService(None)
+                                user_tz = await user_service.get_user_timezone(user_id)
+                            except Exception:
+                                pass
+
+                            base_time = entity.next_notification or datetime.now(
+                                pytz.UTC
+                            ).replace(tzinfo=None)
+
+                            base_time_local = pytz.UTC.localize(base_time).astimezone(
+                                user_tz
+                            )
+                            next_local = base_time_local + timedelta(
                                 days=entity.interval_days
                             )
+
+                            hour, minute = map(int, entity.schedule_time.split(":"))
+                            next_local = next_local.replace(
+                                hour=hour, minute=minute, second=0, microsecond=0
+                            )
+
+                            next_notification = next_local.astimezone(pytz.UTC).replace(
+                                tzinfo=None
+                            )
+
                             entity.notification_count = 0
                             entity.next_notification = next_notification
                             entity.last_message_id = None
@@ -263,10 +298,35 @@ class ReminderService:
                                     error=str(e),
                                 )
 
-                        base_time = entity.next_notification or datetime.utcnow()
-                        next_notification = base_time + timedelta(
+                        user_tz = pytz.UTC
+                        try:
+                            from ..services.user_service import UserService
+
+                            user_service = UserService(None)
+                            user_tz = await user_service.get_user_timezone(user_id)
+                        except Exception:
+                            pass
+
+                        base_time = entity.next_notification or datetime.now(
+                            pytz.UTC
+                        ).replace(tzinfo=None)
+
+                        base_time_local = pytz.UTC.localize(base_time).astimezone(
+                            user_tz
+                        )
+                        next_local = base_time_local + timedelta(
                             days=entity.interval_days
                         )
+
+                        hour, minute = map(int, entity.schedule_time.split(":"))
+                        next_local = next_local.replace(
+                            hour=hour, minute=minute, second=0, microsecond=0
+                        )
+
+                        next_notification = next_local.astimezone(pytz.UTC).replace(
+                            tzinfo=None
+                        )
+
                         entity.notification_count = 0
                         entity.next_notification = next_notification
                         entity.last_message_id = None
@@ -368,7 +428,7 @@ class ReminderService:
             )
             raise DatabaseException(f"Failed to delete reminder: {e}")
 
-    async def get_active_reminders(self) -> List[ReminderDTO]:
+    async def get_active_reminders(self) -> list[ReminderDTO]:
         try:
             if self.reminder_repo is None:
                 async with get_async_session() as session:
@@ -383,9 +443,12 @@ class ReminderService:
             raise DatabaseException(f"Failed to get active reminders: {e}")
 
     def _calculate_next_notification_time(
-        self, schedule_time: str, interval_days: int
+        self,
+        schedule_time: str,
+        interval_days: int,
+        user_timezone: pytz.BaseTzInfo | None = None,
     ) -> datetime:
-        tz = pytz.timezone(settings.timezone)
+        tz = user_timezone or pytz.timezone(settings.timezone)
         now_local = datetime.now(tz)
         hour, minute = map(int, schedule_time.split(":"))
 
@@ -397,3 +460,52 @@ class ReminderService:
             next_time_local += timedelta(days=interval_days if interval_days > 0 else 1)
 
         return next_time_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    async def recompute_reminders_for_timezone_change(
+        self, user_id: int, user_timezone: pytz.BaseTzInfo, job_scheduler=None
+    ) -> int:
+        try:
+            user_reminders = await self.get_user_reminders(user_id)
+            active_reminders = [r for r in user_reminders if r.status.value == "active"]
+
+            updated_count = 0
+            for reminder in active_reminders:
+                new_next_notification = self._calculate_next_notification_time(
+                    reminder.schedule_time, reminder.interval_days, user_timezone
+                )
+
+                if self.reminder_repo is None:
+                    async with get_async_session() as session:
+                        reminder_repo = ReminderRepository(session)
+                        entity = await reminder_repo.get_by_id(reminder.id)
+                        if entity:
+                            entity.next_notification = new_next_notification
+                            entity.updated_at = datetime.utcnow()
+                            await reminder_repo.update(entity)
+                else:
+                    entity = await self.reminder_repo.get_by_id(reminder.id)
+                    if entity:
+                        entity.next_notification = new_next_notification
+                        entity.updated_at = datetime.utcnow()
+                        await self.reminder_repo.update(entity)
+
+                if job_scheduler:
+                    await job_scheduler.cancel_reminder(reminder.id)
+                    from ..utils.transformers import entity_to_reminder_dto
+
+                    if entity:
+                        updated_reminder = entity_to_reminder_dto(entity)
+                        await job_scheduler.schedule_reminder(updated_reminder)
+
+                updated_count += 1
+
+            logger.info(
+                "reminders_recomputed_for_timezone_change",
+                user_id=user_id,
+                updated_count=updated_count,
+            )
+            return updated_count
+
+        except Exception as e:
+            logger.error("recompute_reminders_failed", error=str(e), user_id=user_id)
+            raise DatabaseException(f"Failed to recompute reminders: {e}")

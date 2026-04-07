@@ -1,7 +1,8 @@
-import asyncio
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
+
 from sqlalchemy import text
+
 from ..utils.database import get_async_session
 from ..utils.logging import get_logger
 from ..utils.version import get_version
@@ -13,7 +14,7 @@ class HealthChecker:
     def __init__(self, bot_service=None):
         self.bot_service = bot_service
 
-    async def comprehensive_health_check(self) -> Dict[str, Any]:
+    async def comprehensive_health_check(self) -> dict[str, Any]:
         health_status = {
             "status": "healthy",
             "timestamp": datetime.utcnow().isoformat(),
@@ -47,7 +48,7 @@ class HealthChecker:
 
         return health_status
 
-    async def _check_database_health(self) -> Dict[str, Any]:
+    async def _check_database_health(self) -> dict[str, Any]:
         try:
             async with get_async_session() as session:
                 result = await session.execute(text("SELECT 1"))
@@ -67,7 +68,7 @@ class HealthChecker:
                 "response_time_ms": 0,
             }
 
-    async def _check_bot_health(self) -> Dict[str, Any]:
+    async def _check_bot_health(self) -> dict[str, Any]:
         try:
             if not self.bot_service or not self.bot_service.bot:
                 return {"healthy": False, "message": "Bot not initialized"}
@@ -85,7 +86,7 @@ class HealthChecker:
             logger.error("bot_health_check_failed", error=str(e))
             return {"healthy": False, "message": f"Bot health check failed: {str(e)}"}
 
-    async def _check_scheduler_health(self) -> Dict[str, Any]:
+    async def _check_scheduler_health(self) -> dict[str, Any]:
         try:
             if not self.bot_service or not self.bot_service.job_scheduler:
                 return {"healthy": False, "message": "Scheduler not initialized"}

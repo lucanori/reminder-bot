@@ -1,7 +1,7 @@
-from enum import Enum
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import BigInteger, String, Text, Integer, Boolean, ForeignKey, DateTime
+from enum import Enum
+
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -23,7 +23,7 @@ class UserEntity(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     is_whitelisted: Mapped[bool] = mapped_column(Boolean, default=False)
-    notification_preferences: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notification_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -44,8 +44,8 @@ class ReminderEntity(Base):
     notification_count: Mapped[int] = mapped_column(Integer, default=0)
     max_notifications: Mapped[int] = mapped_column(Integer, default=10)
     notification_interval_minutes: Mapped[int] = mapped_column(Integer, default=5)
-    last_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    job_id: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
+    last_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -58,9 +58,9 @@ class NotificationHistoryEntity(Base):
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     reminder_id: Mapped[int] = mapped_column(Integer, ForeignKey("reminders.id"))
-    message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    response_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    response_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    response_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    response_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     
     reminder: Mapped["ReminderEntity"] = relationship("ReminderEntity", back_populates="notification_history")

@@ -1,9 +1,10 @@
-from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select, update
-from .base import BaseRepository
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..models.entities import UserEntity
 from ..utils.exceptions import DatabaseException
+from .base import BaseRepository
 
 
 class UserRepository(BaseRepository[UserEntity, int]):
@@ -19,7 +20,7 @@ class UserRepository(BaseRepository[UserEntity, int]):
         except Exception as e:
             raise DatabaseException(f"Failed to create user: {e}")
 
-    async def get_by_id(self, entity_id: int) -> Optional[UserEntity]:
+    async def get_by_id(self, entity_id: int) -> UserEntity | None:
         try:
             result = await self.session.execute(
                 select(UserEntity).where(UserEntity.telegram_id == entity_id)
@@ -50,7 +51,7 @@ class UserRepository(BaseRepository[UserEntity, int]):
         except Exception as e:
             raise DatabaseException(f"Failed to delete user: {e}")
 
-    async def get_all(self) -> List[UserEntity]:
+    async def get_all(self) -> list[UserEntity]:
         try:
             result = await self.session.execute(select(UserEntity))
             return list(result.scalars().all())

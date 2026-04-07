@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic, List, Optional
+from typing import Generic, TypeVar
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar('T')
@@ -15,7 +16,7 @@ class BaseRepository(ABC, Generic[T, ID]):
         pass
 
     @abstractmethod
-    async def get_by_id(self, entity_id: ID) -> Optional[T]:
+    async def get_by_id(self, entity_id: ID) -> T | None:
         pass
 
     @abstractmethod
@@ -27,5 +28,5 @@ class BaseRepository(ABC, Generic[T, ID]):
         pass
 
     @abstractmethod
-    async def get_all(self) -> List[T]:
+    async def get_all(self) -> list[T]:
         pass

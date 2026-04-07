@@ -1,5 +1,5 @@
-from ..models.entities import ReminderEntity, UserEntity, ReminderStatus
-from ..models.dtos import ReminderDTO, UserDTO, ReminderCreateDTO
+from ..models.dtos import ReminderCreateDTO, ReminderDTO, UserDTO
+from ..models.entities import ReminderEntity, ReminderStatus, UserEntity
 
 
 def entity_to_reminder_dto(entity: ReminderEntity) -> ReminderDTO:
