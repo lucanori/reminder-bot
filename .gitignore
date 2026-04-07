@@ -19,6 +19,7 @@ ENV/
 
 # uv
 .uv-cache/
+.ruff_cache/
 
 # Testing
 .pytest_cache/

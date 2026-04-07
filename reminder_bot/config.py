@@ -1,10 +1,11 @@
+
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 
 class Settings(BaseSettings):
     telegram_bot_token: str
-    telegram_webhook_url: Optional[str] = None
+    telegram_webhook_url: str | None = None
 
     database_url: str = "sqlite+aiosqlite:///:memory:"
 
@@ -20,9 +21,11 @@ class Settings(BaseSettings):
     admin_password: str
     flask_secret_key: str
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 def validate_settings() -> Settings:

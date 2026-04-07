@@ -2,30 +2,26 @@ services:
   reminder-bot:
     build: .
     container_name: reminder-bot-local
+    user: "0:0"
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
+      - reminder-bot-data:/data
     environment:
       # Admin Configuration
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
-      
       # Bot Configuration
       - BOT_MODE=blocklist # blocklist or whitelist
       - DEFAULT_NOTIFICATION_INTERVAL=5
       - MAX_NOTIFICATIONS_PER_REMINDER=10
-      
       # Database Configuration
-      - DATABASE_URL=sqlite+aiosqlite:///data/reminders.db
-      
+      - DATABASE_URL=sqlite+aiosqlite:////data/reminders.db
       # General Configuration
       - DEBUG=false
       - LOG_LEVEL=INFO
-      - TIMEZONE=${TZ}
-      
       # Telegram Configuration
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL:-}
@@ -35,3 +31,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  reminder-bot-data:
