@@ -1,3 +1,3 @@
 #!/bin/bash
 
-exec uv run python -m reminder_bot "$@"
+exec /app/.venv/bin/python -m reminder_bot "$@"
