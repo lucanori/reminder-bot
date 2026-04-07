@@ -73,11 +73,11 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if bot_mode == 'whitelist' %}
+                             {% if bot_mode == 'whitelist' %}
                                 {% if not user.is_whitelisted %}
                                     <a href="{{ url_for('whitelist_user', user_id=user.telegram_id) }}" class="action-button whitelist-button">Whitelist</a>
                                 {% else %}
-                                    <!-- Optionally add 'Remove Whitelist' if needed -->
+                                    <a href="{{ url_for('remove_whitelist', user_id=user.telegram_id) }}" class="action-button block-button">Remove</a>
                                 {% endif %}
                              {% elif bot_mode == 'blocklist' %}
                                 {% if not user.is_blocked %}

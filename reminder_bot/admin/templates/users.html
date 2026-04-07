@@ -3,216 +3,195 @@
 {% block title %}Users - Reminder Bot Admin{% endblock %}
 
 {% block content %}
+<style>
+    .user-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    .user-table th, .user-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .user-table th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+    .user-table tr:hover {
+        background-color: #f8f9fa;
+    }
+    .badge {
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        font-weight: 500;
+    }
+    .badge-blocked {
+        background-color: #dc3545;
+        color: white;
+    }
+    .badge-whitelisted {
+        background-color: #198754;
+        color: white;
+    }
+    .badge-normal {
+        background-color: #6c757d;
+        color: white;
+    }
+    .btn-action {
+        padding: 4px 12px;
+        margin: 2px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 0.85em;
+        display: inline-block;
+    }
+    .btn-block {
+        background-color: #dc3545;
+        color: white;
+    }
+    .btn-block:hover {
+        background-color: #c82333;
+        color: white;
+    }
+    .btn-unblock {
+        background-color: #28a745;
+        color: white;
+    }
+    .btn-unblock:hover {
+        background-color: #218838;
+        color: white;
+    }
+    .btn-whitelist {
+        background-color: #17a2b8;
+        color: white;
+    }
+    .btn-whitelist:hover {
+        background-color: #138496;
+        color: white;
+    }
+    .btn-remove-whitelist {
+        background-color: #ffc107;
+        color: #212529;
+    }
+    .btn-remove-whitelist:hover {
+        background-color: #e0a800;
+        color: #212529;
+    }
+    .search-box {
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        width: 300px;
+    }
+</style>
+
 <div class="row">
     <div class="col-12">
         <h1><i class="bi bi-people"></i> User Management</h1>
+        <p class="text-muted">Mode: <span class="badge bg-info">{{ bot_mode|title }}</span></p>
         <hr>
     </div>
 </div>
 
 <div class="row mb-3">
     <div class="col-md-6">
-        <input type="text" class="form-control" id="searchInput" placeholder="Search by Telegram ID...">
+        <input type="text" class="search-box" id="searchInput" placeholder="Search by Telegram ID..." onkeyup="filterUsers()">
     </div>
-    <div class="col-md-6">
-        <button class="btn btn-primary" onclick="loadUsers()">
+    <div class="col-md-6 text-end">
+        <a href="{{ url_for('users') }}" class="btn btn-outline-primary">
             <i class="bi bi-arrow-clockwise"></i> Refresh
-        </button>
+        </a>
     </div>
 </div>
 
 <div class="card">
     <div class="card-body">
-        <div id="users-table-container">
-            <div class="d-flex justify-content-center">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-            </div>
+        {% if users %}
+        <div class="table-responsive">
+            <table class="user-table" id="usersTable">
+                <thead>
+                    <tr>
+                        <th>Telegram ID</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr data-user-id="{{ user.telegram_id }}">
+                        <td>{{ user.telegram_id }}</td>
+                        <td>
+                            {% if user.is_blocked %}
+                                <span class="badge badge-blocked">Blocked</span>
+                            {% elif user.is_whitelisted %}
+                                <span class="badge badge-whitelisted">Whitelisted</span>
+                            {% else %}
+                                <span class="badge badge-normal">Normal</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>{{ user.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            {% if bot_mode == 'blocklist' %}
+                                {% if user.is_blocked %}
+                                    <a href="{{ url_for('unblock_user', user_id=user.telegram_id) }}" class="btn-action btn-unblock" onclick="return confirm('Unblock user {{ user.telegram_id }}?')">
+                                        <i class="bi bi-unlock"></i> Unblock
+                                    </a>
+                                {% else %}
+                                    <a href="{{ url_for('block_user', user_id=user.telegram_id) }}" class="btn-action btn-block" onclick="return confirm('Block user {{ user.telegram_id }}?')">
+                                        <i class="bi bi-lock"></i> Block
+                                    </a>
+                                {% endif %}
+                            {% elif bot_mode == 'whitelist' %}
+                                {% if user.is_whitelisted %}
+                                    <a href="{{ url_for('remove_whitelist', user_id=user.telegram_id) }}" class="btn-action btn-remove-whitelist" onclick="return confirm('Remove user {{ user.telegram_id }} from whitelist?')">
+                                        <i class="bi bi-x-circle"></i> Remove from Whitelist
+                                    </a>
+                                {% else %}
+                                    <a href="{{ url_for('whitelist_user', user_id=user.telegram_id) }}" class="btn-action btn-whitelist" onclick="return confirm('Add user {{ user.telegram_id }} to whitelist?')">
+                                        <i class="bi bi-check-circle"></i> Add to Whitelist
+                                    </a>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-    </div>
-</div>
-
-<div class="modal fade" id="confirmModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="confirmModalTitle">Confirm Action</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="confirmModalBody">
-                Are you sure you want to perform this action?
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmButton">Confirm</button>
-            </div>
+        <p class="text-muted mt-3">Total users: {{ users|length }}</p>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> No users found
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-let currentPage = 1;
-let allUsers = [];
+function filterUsers() {
+    const input = document.getElementById('searchInput');
+    const filter = input.value.toLowerCase();
+    const table = document.getElementById('usersTable');
+    const rows = table.getElementsByTagName('tr');
 
-function loadUsers() {
-    const container = document.getElementById('users-table-container');
-    container.innerHTML = `
-        <div class="d-flex justify-content-center">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-        </div>
-    `;
-
-    fetch('/api/users?page=1&per_page=1000')
-        .then(response => response.json())
-        .then(data => {
-            allUsers = data.users;
-            displayUsers(allUsers);
-        })
-        .catch(error => {
-            console.error('Error loading users:', error);
-            container.innerHTML = `
-                <div class="alert alert-danger">
-                    <i class="bi bi-exclamation-triangle"></i> Failed to load users
-                </div>
-            `;
-        });
-}
-
-function displayUsers(users) {
-    const container = document.getElementById('users-table-container');
-    
-    if (users.length === 0) {
-        container.innerHTML = `
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle"></i> No users found
-            </div>
-        `;
-        return;
-    }
-
-    let tableHtml = `
-        <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Telegram ID</th>
-                        <th>Status</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-
-    users.forEach(user => {
-        const statusBadge = user.is_blocked ? 
-            '<span class="badge bg-danger">Blocked</span>' : 
-            user.is_whitelisted ? 
-                '<span class="badge bg-success">Whitelisted</span>' : 
-                '<span class="badge bg-secondary">Normal</span>';
-
-        const blockAction = user.is_blocked ? 
-            `<button class="btn btn-sm btn-success" onclick="unblockUser(${user.telegram_id})">Unblock</button>` : 
-            `<button class="btn btn-sm btn-danger" onclick="blockUser(${user.telegram_id})">Block</button>`;
-
-        tableHtml += `
-            <tr>
-                <td>${user.telegram_id}</td>
-                <td>${statusBadge}</td>
-                <td>${new Date(user.created_at).toLocaleDateString()}</td>
-                <td>${blockAction}</td>
-            </tr>
-        `;
-    });
-
-    tableHtml += `
-                </tbody>
-            </table>
-        </div>
-    `;
-
-    container.innerHTML = tableHtml;
-}
-
-function blockUser(userId) {
-    showConfirmModal(
-        'Block User',
-        `Are you sure you want to block user ${userId}?`,
-        () => performUserAction(userId, 'block')
-    );
-}
-
-function unblockUser(userId) {
-    showConfirmModal(
-        'Unblock User',
-        `Are you sure you want to unblock user ${userId}?`,
-        () => performUserAction(userId, 'unblock')
-    );
-}
-
-function performUserAction(userId, action) {
-    fetch(`/api/users/${userId}/${action}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
+    for (let i = 1; i < rows.length; i++) {
+        const userIdCell = rows[i].getElementsByTagName('td')[0];
+        if (userIdCell) {
+            const userId = userIdCell.textContent || userIdCell.innerText;
+            if (userId.toLowerCase().indexOf(filter) > -1) {
+                rows[i].style.display = '';
+            } else {
+                rows[i].style.display = 'none';
+            }
         }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            loadUsers();
-            showAlert('success', data.message);
-        } else {
-            showAlert('danger', data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error performing action:', error);
-        showAlert('danger', 'An error occurred while performing the action.');
-    });
-
-    const modal = bootstrap.Modal.getInstance(document.getElementById('confirmModal'));
-    modal.hide();
-}
-
-function showConfirmModal(title, message, onConfirm) {
-    document.getElementById('confirmModalTitle').textContent = title;
-    document.getElementById('confirmModalBody').textContent = message;
-    
-    const confirmButton = document.getElementById('confirmButton');
-    confirmButton.onclick = onConfirm;
-    
-    const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
-    modal.show();
-}
-
-function showAlert(type, message) {
-    const alertHtml = `
-        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-    document.querySelector('.container').insertAdjacentHTML('afterbegin', alertHtml);
-}
-
-document.getElementById('searchInput').addEventListener('input', function(e) {
-    const searchTerm = e.target.value.toLowerCase();
-    if (searchTerm === '') {
-        displayUsers(allUsers);
-    } else {
-        const filteredUsers = allUsers.filter(user => 
-            user.telegram_id.toString().includes(searchTerm)
-        );
-        displayUsers(filteredUsers);
     }
-});
-
-document.addEventListener('DOMContentLoaded', loadUsers);
+}
 </script>
 {% endblock %}
