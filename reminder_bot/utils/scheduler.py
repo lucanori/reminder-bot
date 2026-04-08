@@ -5,6 +5,7 @@ from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from croniter import croniter
 
 from ..models.dtos import ReminderDTO
 from ..models.entities import ReminderStatus
@@ -150,6 +151,39 @@ class JobScheduler:
             )
             return False
 
+    async def cancel_notification_jobs(self, reminder_id: int) -> int:
+        cancelled_count = 0
+        try:
+            for job in self.scheduler.get_jobs():
+                if job.id.startswith(f"notification_{reminder_id}_"):
+                    try:
+                        self.scheduler.remove_job(job.id)
+                        cancelled_count += 1
+                        logger.info(
+                            "cancelled_notification_job",
+                            job_id=job.id,
+                            reminder_id=reminder_id,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "failed_to_cancel_notification_job",
+                            job_id=job.id,
+                            reminder_id=reminder_id,
+                            error=str(e),
+                        )
+            logger.info(
+                "notification_jobs_cancelled",
+                reminder_id=reminder_id,
+                count=cancelled_count,
+            )
+        except Exception as e:
+            logger.error(
+                "cancel_notification_jobs_failed",
+                reminder_id=reminder_id,
+                error=str(e),
+            )
+        return cancelled_count
+
     async def _send_reminder_job(self, reminder_id: int) -> None:
         from ..repositories.reminder_repository import ReminderRepository
         from ..services.notification_service import NotificationService
@@ -234,17 +268,35 @@ class JobScheduler:
             now_local = datetime.now(user_tz)
             hour, minute = map(int, reminder.schedule_time.split(":"))
 
-            next_local = now_local.replace(
-                hour=hour, minute=minute, second=0, microsecond=0
-            )
-
-            if reminder.interval_days > 0:
-                days_to_add = reminder.interval_days
+            if reminder.cron_expression:
+                try:
+                    base_time = datetime.now(pytz.UTC).replace(tzinfo=None)
+                    base_local = pytz.UTC.localize(base_time).astimezone(user_tz)
+                    itr = croniter(reminder.cron_expression, base_local)
+                    next_local = itr.get_next(datetime)
+                except Exception:
+                    next_local = now_local.replace(
+                        hour=hour, minute=minute, second=0, microsecond=0
+                    )
+                    if next_local <= now_local:
+                        next_local += timedelta(days=1)
+            elif reminder.weekday is not None:
+                days_ahead = reminder.weekday - now_local.weekday()
+                if days_ahead <= 0:
+                    days_ahead += 7
+                next_local = now_local + timedelta(days=days_ahead)
+                next_local = next_local.replace(
+                    hour=hour, minute=minute, second=0, microsecond=0
+                )
             else:
-                days_to_add = 1
-
-            if next_local <= now_local:
-                next_local += timedelta(days=days_to_add)
+                next_local = now_local.replace(
+                    hour=hour, minute=minute, second=0, microsecond=0
+                )
+                days_to_add = (
+                    reminder.interval_days if reminder.interval_days > 0 else 1
+                )
+                if next_local <= now_local:
+                    next_local += timedelta(days=days_to_add)
 
             next_utc = next_local.astimezone(pytz.UTC).replace(tzinfo=None)
 
@@ -315,8 +367,17 @@ class JobScheduler:
 
                         now_utc = datetime.now(pytz.UTC).replace(tzinfo=None)
                         if reminder.next_notification > now_utc:
-                            await self.schedule_reminder(reminder)
-                            recovered_count += 1
+                            job_id = f"reminder_{reminder.id}"
+                            existing_job = self.scheduler.get_job(job_id)
+                            if not existing_job:
+                                await self.schedule_reminder(reminder)
+                                recovered_count += 1
+                            else:
+                                logger.info(
+                                    "reminder_job_already_exists",
+                                    reminder_id=reminder.id,
+                                    job_id=job_id,
+                                )
                         else:
                             overdue_minutes = int(
                                 (now_utc - reminder.next_notification).total_seconds()

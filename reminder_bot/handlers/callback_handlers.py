@@ -69,6 +69,10 @@ class CallbackHandlers:
             await self._handle_custom_time_selection(query, context)
         elif query.data.startswith("custominterval_"):
             await self._handle_custom_interval_selection(query, context)
+        elif query.data.startswith("weekday_"):
+            await self._handle_weekday_selection(query, context)
+        elif query.data == "enter_cron":
+            await self._handle_enter_cron(query, context)
         elif query.data == "use_set_command":
             await self._handle_use_set_command(query, context)
         elif query.data.startswith("delete_"):
@@ -161,7 +165,9 @@ class CallbackHandlers:
             message_lines = ["📋 <b>Your Active Reminders:</b>\n"]
 
             for reminder in active_reminders[:10]:
-                interval_text = self._format_interval_text(reminder.interval_days)
+                interval_text = self._format_interval_text(
+                    reminder.interval_days, reminder.weekday, reminder.cron_expression
+                )
                 next_time = reminder.next_notification.strftime("%m-%d %H:%M UTC")
 
                 status_emoji = (
@@ -240,7 +246,9 @@ class CallbackHandlers:
             keyboard = []
 
             for reminder in active_reminders[:10]:
-                interval_text = self._format_interval_text(reminder.interval_days)
+                interval_text = self._format_interval_text(
+                    reminder.interval_days, reminder.weekday, reminder.cron_expression
+                )
                 button_text = (
                     f"🗑 {reminder.text[:30]}{'...' if len(reminder.text) > 30 else ''}"
                 )
@@ -261,8 +269,13 @@ class CallbackHandlers:
             message_lines.append("Select a reminder to delete:\n")
 
             for reminder in active_reminders[:10]:
-                interval_text = self._format_interval_text(reminder.interval_days)
-                msg = f"• <b>{reminder.text}</b> (⏰ {reminder.schedule_time}, 🔄 {interval_text})"
+                interval_text = self._format_interval_text(
+                    reminder.interval_days, reminder.weekday, reminder.cron_expression
+                )
+                msg = (
+                    f"• <b>{reminder.text}</b> "
+                    f"(⏰ {reminder.schedule_time}, 🔄 {interval_text})"
+                )
                 message_lines.append(msg)
 
             await query.edit_message_text(
@@ -632,13 +645,18 @@ class CallbackHandlers:
                         "📆 Every 3 days", callback_data="custominterval_3"
                     )
                 ],
-                [InlineKeyboardButton("🗓️ Weekly", callback_data="custominterval_7")],
+                [
+                    InlineKeyboardButton(
+                        "🗓️ Weekly (pick day)", callback_data="custominterval_7"
+                    )
+                ],
                 [InlineKeyboardButton("📅 Monthly", callback_data="custominterval_30")],
                 [
                     InlineKeyboardButton(
                         "✏️ Custom interval", callback_data="custom_interval_manual"
                     )
                 ],
+                [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")],
                 [InlineKeyboardButton("🔙 Back", callback_data="template_custom")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -681,6 +699,11 @@ class CallbackHandlers:
 
     async def _handle_custom_interval_selection(self, query, context):
         interval = int(query.data.replace("custominterval_", ""))
+
+        if interval == 7:
+            context.user_data["interval_days"] = 7
+            await self._show_weekday_selection(query, context)
+            return
 
         custom_text = context.user_data.get("custom_text", "Custom reminder")
         custom_time = context.user_data.get("custom_time", "09:00")
@@ -739,6 +762,136 @@ class CallbackHandlers:
             await query.edit_message_text(
                 "❌ Failed to create custom reminder. Please try again later."
             )
+
+    async def _show_weekday_selection(self, query, context):
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        weekdays = [
+            ("Monday", 0),
+            ("Tuesday", 1),
+            ("Wednesday", 2),
+            ("Thursday", 3),
+            ("Friday", 4),
+            ("Saturday", 5),
+            ("Sunday", 6),
+        ]
+
+        keyboard = []
+        row = []
+        for name, value in weekdays:
+            row.append(InlineKeyboardButton(name, callback_data=f"weekday_{value}"))
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "⚙️ Enter Cron Expression", callback_data="enter_cron"
+                )
+            ]
+        )
+        keyboard.append(
+            [InlineKeyboardButton("🔙 Back", callback_data="custom_interval")]
+        )
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            "📅 <b>Select Weekday</b>\n\n"
+            "Choose which day of the week for your weekly reminder:\n\n"
+            "<i>Or use a custom cron expression for advanced scheduling</i>",
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+
+    async def _handle_weekday_selection(self, query, context):
+        weekday = int(query.data.replace("weekday_", ""))
+
+        custom_text = context.user_data.get("custom_text", "Custom reminder")
+        custom_time = context.user_data.get("custom_time", "09:00")
+
+        weekday_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+
+        try:
+            from ..models.dtos import ReminderCreateDTO
+
+            reminder_data = ReminderCreateDTO(
+                user_id=query.from_user.id,
+                chat_id=query.message.chat_id,
+                text=custom_text,
+                schedule_time=custom_time,
+                interval_days=7,
+                weekday=weekday,
+            )
+
+            reminder = await self.reminder_service.create_reminder(reminder_data)
+
+            if self.job_scheduler:
+                await self.job_scheduler.schedule_reminder(reminder)
+
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+            keyboard = [
+                [InlineKeyboardButton("🏠 Back to Menu", callback_data="back_to_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            next_notif = reminder.next_notification.strftime("%Y-%m-%d %H:%M")
+            await query.edit_message_text(
+                f"✅ <b>Weekly Reminder Created!</b>\n\n"
+                f"📝 <b>Text:</b> {reminder.text}\n"
+                f"⏰ <b>Time:</b> {reminder.schedule_time}\n"
+                f"🔄 <b>Repeat:</b> Weekly on {weekday_names[weekday]}\n\n"
+                f"🔔 Next notification: <b>{next_notif}</b>",
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+
+            context.user_data.clear()
+
+            logger.info(
+                "weekly_reminder_created",
+                user_id=query.from_user.id,
+                reminder_id=reminder.id,
+                weekday=weekday,
+            )
+
+        except Exception as e:
+            logger.error(
+                "weekly_reminder_creation_failed",
+                error=str(e),
+                user_id=query.from_user.id,
+            )
+            await query.edit_message_text(
+                "❌ Failed to create reminder. Please try again later."
+            )
+
+    async def _handle_enter_cron(self, query, context):
+        context.user_data["waiting_for"] = "cron_expression"
+        context.user_data["original_message_id"] = query.message.message_id
+
+        await query.edit_message_text(
+            "⚙️ <b>Enter Cron Expression</b>\n\n"
+            "Please type a cron expression in the chat.\n\n"
+            "<b>Format:</b> minute hour day month weekday\n"
+            "<b>Examples:</b>\n"
+            "• <code>0 9 * * 1</code> - Every Monday at 09:00\n"
+            "• <code>0 8 * * 1-5</code> - Weekdays at 08:00\n"
+            "• <code>0 0 1 * *</code> - First day of month at 00:00\n\n"
+            "<i>Type your cron expression below:</i>",
+            parse_mode="HTML",
+        )
 
     async def _handle_custom_time_manual(self, query, context):
         context.user_data["waiting_for"] = "custom_time"
@@ -839,7 +992,10 @@ class CallbackHandlers:
                     user_id=user_id,
                 )
             else:
-                msg = f"❌ Failed to delete reminder {reminder_id}. Not found or no permission."
+                msg = (
+                    f"❌ Failed to delete reminder {reminder_id}. "
+                    "Not found or no permission."
+                )
                 await query.edit_message_text(msg)
 
         except Exception as e:
@@ -861,7 +1017,22 @@ class CallbackHandlers:
                 reply_markup=reply_markup,
             )
 
-    def _format_interval_text(self, days: int) -> str:
+    def _format_interval_text(
+        self, days: int, weekday: int | None = None, cron_expression: str | None = None
+    ) -> str:
+        if cron_expression:
+            return f"Cron: {cron_expression}"
+        if weekday is not None:
+            weekday_names = [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            return f"Weekly on {weekday_names[weekday]}"
         if days == 0:
             return "One-time"
         elif days == 1:
@@ -1119,6 +1290,91 @@ class CallbackHandlers:
             context.user_data.clear()
 
             logger.info("timezone_set_via_text", user_id=user_id, timezone=timezone_str)
+            return
+
+        elif waiting_for == "cron_expression":
+            cron_expr = text
+
+            try:
+                from croniter import croniter
+
+                if not croniter.is_valid(cron_expr):
+                    cron_help = (
+                        "❌ Invalid cron expression. "
+                        "Format: <code>min hour day month weekday</code>\n\n"
+                        "<b>Examples:</b>\n"
+                        "• <code>0 9 * * 1</code> - Monday 09:00\n"
+                        "• <code>0 8 * * 1-5</code> - Weekdays 08:00\n\n"
+                        "Please try again:"
+                    )
+                    await update.message.reply_text(cron_help, parse_mode="HTML")
+                    return
+            except Exception:
+                await update.message.reply_text(
+                    "❌ Invalid cron expression. Please try again.",
+                )
+                return
+
+            custom_text = context.user_data.get("custom_text", "Custom reminder")
+            custom_time = context.user_data.get("custom_time", "09:00")
+
+            try:
+                from ..models.dtos import ReminderCreateDTO
+
+                reminder_data = ReminderCreateDTO(
+                    user_id=update.effective_user.id,
+                    chat_id=update.effective_chat.id,
+                    text=custom_text,
+                    schedule_time=custom_time,
+                    interval_days=0,
+                    cron_expression=cron_expr,
+                )
+
+                reminder = await self.reminder_service.create_reminder(reminder_data)
+
+                if self.job_scheduler:
+                    await self.job_scheduler.schedule_reminder(reminder)
+
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Back to Menu", callback_data="back_to_menu"
+                        )
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                next_notif = reminder.next_notification.strftime("%Y-%m-%d %H:%M")
+                await update.message.reply_text(
+                    f"✅ <b>Cron Reminder Created!</b>\n\n"
+                    f"📝 <b>Text:</b> {reminder.text}\n"
+                    f"⏰ <b>Schedule:</b> <code>{cron_expr}</code>\n\n"
+                    f"🔔 Next notification: <b>{next_notif}</b>",
+                    parse_mode="HTML",
+                    reply_markup=reply_markup,
+                )
+
+                context.user_data.clear()
+
+                logger.info(
+                    "cron_reminder_created",
+                    user_id=update.effective_user.id,
+                    reminder_id=reminder.id,
+                    cron_expression=cron_expr,
+                )
+
+            except Exception as e:
+                logger.error(
+                    "cron_reminder_creation_failed",
+                    error=str(e),
+                    user_id=update.effective_user.id,
+                )
+                await update.message.reply_text(
+                    "❌ Failed to create reminder. Please try again later."
+                )
+
             return
 
         if text.isdigit():

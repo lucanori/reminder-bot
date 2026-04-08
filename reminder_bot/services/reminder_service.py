@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 import pytz
+from croniter import croniter
 
 from ..config import settings
 from ..models.dtos import ReminderCreateDTO, ReminderDTO, ReminderUpdateDTO
@@ -13,6 +14,16 @@ from ..utils.logging import get_logger
 from ..utils.transformers import entity_to_reminder_dto, reminder_create_dto_to_entity
 
 logger = get_logger()
+
+WEEKDAY_NAMES = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
 
 
 class ReminderService:
@@ -34,7 +45,11 @@ class ReminderService:
                 pass
 
             next_notification_time = self._calculate_next_notification_time(
-                reminder_data.schedule_time, reminder_data.interval_days, user_tz
+                reminder_data.schedule_time,
+                reminder_data.interval_days,
+                user_tz,
+                reminder_data.weekday,
+                reminder_data.cron_expression,
             )
             entity.next_notification = next_notification_time
 
@@ -109,18 +124,12 @@ class ReminderService:
                         entity.text = update_data.text
                     if update_data.schedule_time is not None:
                         entity.schedule_time = update_data.schedule_time
-                        entity.next_notification = (
-                            self._calculate_next_notification_time(
-                                update_data.schedule_time, entity.interval_days
-                            )
-                        )
                     if update_data.interval_days is not None:
                         entity.interval_days = update_data.interval_days
-                        entity.next_notification = (
-                            self._calculate_next_notification_time(
-                                entity.schedule_time, update_data.interval_days
-                            )
-                        )
+                    if update_data.weekday is not None:
+                        entity.weekday = update_data.weekday
+                    if update_data.cron_expression is not None:
+                        entity.cron_expression = update_data.cron_expression
                     if update_data.notification_interval_minutes is not None:
                         entity.notification_interval_minutes = (
                             update_data.notification_interval_minutes
@@ -129,6 +138,32 @@ class ReminderService:
                         entity.max_notifications = update_data.max_notifications
                     if update_data.status is not None:
                         entity.status = update_data.status.value
+
+                    if any(
+                        [
+                            update_data.schedule_time is not None,
+                            update_data.interval_days is not None,
+                            update_data.weekday is not None,
+                            update_data.cron_expression is not None,
+                        ]
+                    ):
+                        user_tz = pytz.UTC
+                        try:
+                            from ..services.user_service import UserService
+
+                            user_service = UserService(None)
+                            user_tz = await user_service.get_user_timezone(user_id)
+                        except Exception:
+                            pass
+                        entity.next_notification = (
+                            self._calculate_next_notification_time(
+                                entity.schedule_time,
+                                entity.interval_days,
+                                user_tz,
+                                entity.weekday,
+                                entity.cron_expression,
+                            )
+                        )
 
                     entity.updated_at = datetime.utcnow()
                     updated_entity = await reminder_repo.update(entity)
@@ -146,14 +181,12 @@ class ReminderService:
                     entity.text = update_data.text
                 if update_data.schedule_time is not None:
                     entity.schedule_time = update_data.schedule_time
-                    entity.next_notification = self._calculate_next_notification_time(
-                        update_data.schedule_time, entity.interval_days
-                    )
                 if update_data.interval_days is not None:
                     entity.interval_days = update_data.interval_days
-                    entity.next_notification = self._calculate_next_notification_time(
-                        entity.schedule_time, update_data.interval_days
-                    )
+                if update_data.weekday is not None:
+                    entity.weekday = update_data.weekday
+                if update_data.cron_expression is not None:
+                    entity.cron_expression = update_data.cron_expression
                 if update_data.notification_interval_minutes is not None:
                     entity.notification_interval_minutes = (
                         update_data.notification_interval_minutes
@@ -162,6 +195,30 @@ class ReminderService:
                     entity.max_notifications = update_data.max_notifications
                 if update_data.status is not None:
                     entity.status = update_data.status.value
+
+                if any(
+                    [
+                        update_data.schedule_time is not None,
+                        update_data.interval_days is not None,
+                        update_data.weekday is not None,
+                        update_data.cron_expression is not None,
+                    ]
+                ):
+                    user_tz = pytz.UTC
+                    try:
+                        from ..services.user_service import UserService
+
+                        user_service = UserService(None)
+                        user_tz = await user_service.get_user_timezone(user_id)
+                    except Exception:
+                        pass
+                    entity.next_notification = self._calculate_next_notification_time(
+                        entity.schedule_time,
+                        entity.interval_days,
+                        user_tz,
+                        entity.weekday,
+                        entity.cron_expression,
+                    )
 
                 entity.updated_at = datetime.utcnow()
                 updated_entity = await self.reminder_repo.update(entity)
@@ -188,163 +245,17 @@ class ReminderService:
                     if not entity or entity.user_id != user_id:
                         return False
 
-                    if entity.status == ReminderStatus.ACTIVE.value:
-                        if entity.interval_days == 0:
-                            await reminder_repo.update_status(
-                                reminder_id, ReminderStatus.COMPLETED
-                            )
-                            logger.info(
-                                "one_time_reminder_completed", reminder_id=reminder_id
-                            )
-                        else:
-                            if job_scheduler:
-                                await job_scheduler.cancel_reminder(reminder_id)
-                                try:
-                                    for job in job_scheduler.scheduler.get_jobs():
-                                        if job.id.startswith(
-                                            f"notification_{reminder_id}_"
-                                        ):
-                                            job_scheduler.scheduler.remove_job(job.id)
-                                            logger.info(
-                                                "cancelled_notification_job",
-                                                job_id=job.id,
-                                                reminder_id=reminder_id,
-                                            )
-                                except Exception as e:
-                                    logger.warning(
-                                        "failed_to_cancel_notification_jobs",
-                                        reminder_id=reminder_id,
-                                        error=str(e),
-                                    )
-
-                            user_tz = pytz.UTC
-                            try:
-                                from ..services.user_service import UserService
-
-                                user_service = UserService(None)
-                                user_tz = await user_service.get_user_timezone(user_id)
-                            except Exception:
-                                pass
-
-                            base_time = entity.next_notification or datetime.now(
-                                pytz.UTC
-                            ).replace(tzinfo=None)
-
-                            base_time_local = pytz.UTC.localize(base_time).astimezone(
-                                user_tz
-                            )
-                            next_local = base_time_local + timedelta(
-                                days=entity.interval_days
-                            )
-
-                            hour, minute = map(int, entity.schedule_time.split(":"))
-                            next_local = next_local.replace(
-                                hour=hour, minute=minute, second=0, microsecond=0
-                            )
-
-                            next_notification = next_local.astimezone(pytz.UTC).replace(
-                                tzinfo=None
-                            )
-
-                            entity.notification_count = 0
-                            entity.next_notification = next_notification
-                            entity.last_message_id = None
-                            await reminder_repo.update(entity)
-
-                            if job_scheduler:
-                                from ..utils.transformers import entity_to_reminder_dto
-
-                                reminder_dto = entity_to_reminder_dto(entity)
-                                await job_scheduler.schedule_reminder(reminder_dto)
-
-                            logger.info(
-                                "recurring_reminder_reset",
-                                reminder_id=reminder_id,
-                                next_notification=next_notification,
-                            )
-
-                        return True
+                    return await self._process_confirmation(
+                        entity, reminder_id, user_id, job_scheduler, reminder_repo
+                    )
             else:
                 entity = await self.reminder_repo.get_by_id(reminder_id)
                 if not entity or entity.user_id != user_id:
                     return False
 
-                if entity.status == ReminderStatus.ACTIVE.value:
-                    if entity.interval_days == 0:
-                        await self.reminder_repo.update_status(
-                            reminder_id, ReminderStatus.COMPLETED
-                        )
-                        logger.info(
-                            "one_time_reminder_completed", reminder_id=reminder_id
-                        )
-                    else:
-                        if job_scheduler:
-                            await job_scheduler.cancel_reminder(reminder_id)
-                            try:
-                                for job in job_scheduler.scheduler.get_jobs():
-                                    if job.id.startswith(
-                                        f"notification_{reminder_id}_"
-                                    ):
-                                        job_scheduler.scheduler.remove_job(job.id)
-                                        logger.info(
-                                            "cancelled_notification_job",
-                                            job_id=job.id,
-                                            reminder_id=reminder_id,
-                                        )
-                            except Exception as e:
-                                logger.warning(
-                                    "failed_to_cancel_notification_jobs",
-                                    reminder_id=reminder_id,
-                                    error=str(e),
-                                )
-
-                        user_tz = pytz.UTC
-                        try:
-                            from ..services.user_service import UserService
-
-                            user_service = UserService(None)
-                            user_tz = await user_service.get_user_timezone(user_id)
-                        except Exception:
-                            pass
-
-                        base_time = entity.next_notification or datetime.now(
-                            pytz.UTC
-                        ).replace(tzinfo=None)
-
-                        base_time_local = pytz.UTC.localize(base_time).astimezone(
-                            user_tz
-                        )
-                        next_local = base_time_local + timedelta(
-                            days=entity.interval_days
-                        )
-
-                        hour, minute = map(int, entity.schedule_time.split(":"))
-                        next_local = next_local.replace(
-                            hour=hour, minute=minute, second=0, microsecond=0
-                        )
-
-                        next_notification = next_local.astimezone(pytz.UTC).replace(
-                            tzinfo=None
-                        )
-
-                        entity.notification_count = 0
-                        entity.next_notification = next_notification
-                        entity.last_message_id = None
-                        await self.reminder_repo.update(entity)
-
-                        if job_scheduler:
-                            from ..utils.transformers import entity_to_reminder_dto
-
-                            reminder_dto = entity_to_reminder_dto(entity)
-                            await job_scheduler.schedule_reminder(reminder_dto)
-
-                        logger.info(
-                            "recurring_reminder_reset",
-                            reminder_id=reminder_id,
-                            next_notification=next_notification,
-                        )
-
-                    return True
+                return await self._process_confirmation(
+                    entity, reminder_id, user_id, job_scheduler, self.reminder_repo
+                )
 
         except Exception as e:
             logger.error(
@@ -353,6 +264,79 @@ class ReminderService:
             raise DatabaseException(f"Failed to confirm reminder: {e}")
 
         return False
+
+    async def _process_confirmation(
+        self, entity, reminder_id: int, user_id: int, job_scheduler, reminder_repo
+    ) -> bool:
+        if entity.status != ReminderStatus.ACTIVE.value:
+            return False
+
+        if entity.interval_days == 0 and entity.cron_expression is None:
+            if job_scheduler:
+                await job_scheduler.cancel_reminder(reminder_id)
+                await job_scheduler.cancel_notification_jobs(reminder_id)
+            await reminder_repo.update_status(reminder_id, ReminderStatus.COMPLETED)
+            logger.info("one_time_reminder_completed", reminder_id=reminder_id)
+            return True
+
+        if job_scheduler:
+            await job_scheduler.cancel_reminder(reminder_id)
+            await job_scheduler.cancel_notification_jobs(reminder_id)
+
+        user_tz = pytz.UTC
+        try:
+            from ..services.user_service import UserService
+
+            user_service = UserService(None)
+            user_tz = await user_service.get_user_timezone(user_id)
+        except Exception:
+            pass
+
+        base_time = entity.next_notification or datetime.now(pytz.UTC).replace(
+            tzinfo=None
+        )
+        base_time_local = pytz.UTC.localize(base_time).astimezone(user_tz)
+
+        if entity.cron_expression:
+            next_notification = self._calculate_next_from_cron(
+                entity.cron_expression, user_tz, base_time_local
+            )
+        elif entity.weekday is not None:
+            hour, minute = map(int, entity.schedule_time.split(":"))
+            days_ahead = entity.weekday - base_time_local.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            next_local = base_time_local + timedelta(days=days_ahead)
+            next_local = next_local.replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+            next_notification = next_local.astimezone(pytz.UTC).replace(tzinfo=None)
+        else:
+            hour, minute = map(int, entity.schedule_time.split(":"))
+            next_local = base_time_local + timedelta(days=entity.interval_days)
+            next_local = next_local.replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+            next_notification = next_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+        entity.notification_count = 0
+        entity.next_notification = next_notification
+        entity.last_message_id = None
+        await reminder_repo.update(entity)
+
+        if job_scheduler:
+            from ..utils.transformers import entity_to_reminder_dto
+
+            reminder_dto = entity_to_reminder_dto(entity)
+            await job_scheduler.schedule_reminder(reminder_dto)
+
+        logger.info(
+            "recurring_reminder_reset",
+            reminder_id=reminder_id,
+            next_notification=next_notification,
+        )
+
+        return True
 
     async def snooze_reminder(self, reminder_id: int, minutes: int) -> bool:
         try:
@@ -447,19 +431,48 @@ class ReminderService:
         schedule_time: str,
         interval_days: int,
         user_timezone: pytz.BaseTzInfo | None = None,
+        weekday: int | None = None,
+        cron_expression: str | None = None,
     ) -> datetime:
         tz = user_timezone or pytz.timezone(settings.timezone)
         now_local = datetime.now(tz)
-        hour, minute = map(int, schedule_time.split(":"))
 
+        if cron_expression:
+            return self._calculate_next_from_cron(cron_expression, tz, now_local)
+
+        hour, minute = map(int, schedule_time.split(":"))
         next_time_local = now_local.replace(
             hour=hour, minute=minute, second=0, microsecond=0
         )
 
-        if next_time_local <= now_local:
+        if weekday is not None:
+            days_ahead = weekday - now_local.weekday()
+            if days_ahead < 0 or (days_ahead == 0 and next_time_local <= now_local):
+                days_ahead += 7
+            next_time_local = now_local + timedelta(days=days_ahead)
+            next_time_local = next_time_local.replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+        elif next_time_local <= now_local:
             next_time_local += timedelta(days=interval_days if interval_days > 0 else 1)
 
         return next_time_local.astimezone(pytz.UTC).replace(tzinfo=None)
+
+    def _calculate_next_from_cron(
+        self, cron_expression: str, tz: pytz.BaseTzInfo, now_local: datetime
+    ) -> datetime:
+        try:
+            itr = croniter(cron_expression, now_local)
+            next_local = itr.get_next(datetime)
+            return next_local.astimezone(pytz.UTC).replace(tzinfo=None)
+        except Exception:
+            hour, minute = 9, 0
+            next_time = now_local.replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+            if next_time <= now_local:
+                next_time += timedelta(days=1)
+            return next_time.astimezone(pytz.UTC).replace(tzinfo=None)
 
     async def recompute_reminders_for_timezone_change(
         self, user_id: int, user_timezone: pytz.BaseTzInfo, job_scheduler=None
@@ -471,7 +484,11 @@ class ReminderService:
             updated_count = 0
             for reminder in active_reminders:
                 new_next_notification = self._calculate_next_notification_time(
-                    reminder.schedule_time, reminder.interval_days, user_timezone
+                    reminder.schedule_time,
+                    reminder.interval_days,
+                    user_timezone,
+                    reminder.weekday,
+                    reminder.cron_expression,
                 )
 
                 if self.reminder_repo is None:
@@ -491,6 +508,7 @@ class ReminderService:
 
                 if job_scheduler:
                     await job_scheduler.cancel_reminder(reminder.id)
+                    await job_scheduler.cancel_notification_jobs(reminder.id)
                     from ..utils.transformers import entity_to_reminder_dto
 
                     if entity:

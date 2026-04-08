@@ -183,7 +183,7 @@ class NotificationService:
         job_scheduler=None,
     ) -> None:
         success = await reminder_service.confirm_reminder(
-            reminder.id, callback_query.from_user.id
+            reminder.id, callback_query.from_user.id, job_scheduler
         )
 
         if success:

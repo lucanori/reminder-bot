@@ -10,6 +10,8 @@ def entity_to_reminder_dto(entity: ReminderEntity) -> ReminderDTO:
         text=entity.text,
         schedule_time=entity.schedule_time,
         interval_days=entity.interval_days,
+        weekday=entity.weekday,
+        cron_expression=entity.cron_expression,
         status=ReminderStatus(entity.status),
         next_notification=entity.next_notification,
         notification_count=entity.notification_count,
@@ -18,7 +20,7 @@ def entity_to_reminder_dto(entity: ReminderEntity) -> ReminderDTO:
         last_message_id=entity.last_message_id,
         job_id=entity.job_id,
         created_at=entity.created_at,
-        updated_at=entity.updated_at
+        updated_at=entity.updated_at,
     )
 
 
@@ -29,10 +31,12 @@ def reminder_create_dto_to_entity(dto: ReminderCreateDTO) -> ReminderEntity:
         text=dto.text,
         schedule_time=dto.schedule_time,
         interval_days=dto.interval_days,
+        weekday=dto.weekday,
+        cron_expression=dto.cron_expression,
         notification_interval_minutes=dto.notification_interval_minutes,
         max_notifications=dto.max_notifications,
         status=ReminderStatus.ACTIVE.value,
-        notification_count=0
+        notification_count=0,
     )
 
 
@@ -43,5 +47,5 @@ def entity_to_user_dto(entity: UserEntity) -> UserDTO:
         is_whitelisted=entity.is_whitelisted,
         notification_preferences=entity.notification_preferences,
         created_at=entity.created_at,
-        updated_at=entity.updated_at
+        updated_at=entity.updated_at,
     )
