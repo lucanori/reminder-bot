@@ -1,0 +1,17 @@
+[run]
+source = reminder_bot
+omit = 
+    reminder_bot/admin/*
+    tests/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    except ImportError:
+    def main\(\)
+
+show_missing = True
+skip_covered = False
