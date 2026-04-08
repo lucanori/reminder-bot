@@ -23,10 +23,10 @@ def event_loop():
 @pytest.fixture
 async def async_engine():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield engine
     await engine.dispose()
 
@@ -34,11 +34,9 @@ async def async_engine():
 @pytest.fixture
 async def async_session(async_engine):
     async_session_factory = async_sessionmaker(
-        async_engine, 
-        expire_on_commit=False, 
-        class_=AsyncSession
+        async_engine, expire_on_commit=False, class_=AsyncSession
     )
-    
+
     async with async_session_factory() as session:
         yield session
 
@@ -90,7 +88,7 @@ async def sample_user():
         is_blocked=False,
         is_whitelisted=False,
         created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        updated_at=datetime.utcnow(),
     )
 
 
@@ -102,13 +100,15 @@ async def sample_reminder(sample_user):
         text="Take vitamins",
         schedule_time="08:00",
         interval_days=1,
+        weekday=None,
+        cron_expression=None,
         status="active",
         next_notification=datetime.utcnow(),
         notification_count=0,
         max_notifications=10,
         notification_interval_minutes=5,
         created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        updated_at=datetime.utcnow(),
     )
 
 
@@ -116,10 +116,10 @@ async def sample_reminder(sample_user):
 async def populated_database(async_session, sample_user, sample_reminder):
     async_session.add(sample_user)
     await async_session.flush()
-    
+
     sample_reminder.user_id = sample_user.telegram_id
     async_session.add(sample_reminder)
     await async_session.flush()
-    
+
     await async_session.commit()
     return {"user": sample_user, "reminder": sample_reminder}
