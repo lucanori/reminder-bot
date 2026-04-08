@@ -180,6 +180,19 @@ toml = [
 ]
 
 [[package]]
+name = "croniter"
+version = "2.0.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+    { name = "pytz" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3d/70/240ea4efb2e03b513d820e8da48b784258cbc88770b4b061931cf0269cf8/croniter-2.0.7.tar.gz", hash = "sha256:1041b912b4b1e03751a0993531becf77851ae6e8b334c9c76ffeffb8f055f53f", size = 49655, upload-time = "2024-07-16T15:21:23.156Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/1b/62e5ef33bb8cd599004b85f1ae648aaaf329ec396a8e210906e3f04df66a/croniter-2.0.7-py2.py3-none-any.whl", hash = "sha256:f15e80828d23920c4bb7f4d9340b932c9dcabecafc7775703c8b36d1253ed526", size = 21201, upload-time = "2024-07-16T15:21:20.433Z" },
+]
+
+[[package]]
 name = "factory-boy"
 version = "3.3.3"
 source = { registry = "https://pypi.org/simple" }
@@ -816,6 +829,7 @@ dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "apscheduler" },
+    { name = "croniter" },
     { name = "flask" },
     { name = "flask-login" },
     { name = "pydantic" },
@@ -830,7 +844,6 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "factory-boy" },
-    { name = "freezegun" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -841,6 +854,7 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "freezegun" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -852,10 +866,10 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.19,<1.0" },
     { name = "alembic", specifier = ">=1.12,<2.0" },
     { name = "apscheduler", specifier = ">=3.10,<4.0" },
+    { name = "croniter", specifier = ">=2.0,<3.0" },
     { name = "factory-boy", marker = "extra == 'dev'", specifier = ">=3.2" },
     { name = "flask", specifier = ">=2.3,<4.0" },
     { name = "flask-login", specifier = ">=0.6,<0.7" },
-    { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.2" },
     { name = "pydantic", specifier = ">=2.0,<3.0" },
     { name = "pydantic-settings", specifier = ">=2.0,<3.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },
@@ -874,6 +888,7 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "freezegun", specifier = ">=1.2" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
     { name = "pytest-cov", specifier = ">=6.3.0" },

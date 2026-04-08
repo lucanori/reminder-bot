@@ -16,6 +16,7 @@ dependencies = [
     "structlog>=23.0,<26.0",
     "python-dotenv>=1.0,<2.0",
     "pytz>=2023.3",
+    "croniter>=2.0,<3.0",
 ]
 
 [project.optional-dependencies]
@@ -25,7 +26,6 @@ dev = [
     "pytest-mock>=3.10",
     "pytest-cov>=4.0",
     "factory-boy>=3.2",
-    "freezegun>=1.2",
     "ruff>=0.1.0",
     "pyright>=1.1.0",
 ]
@@ -75,4 +75,5 @@ dev = [
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.3.0",
     "pytest-mock>=3.15.0",
+    "freezegun>=1.2",
 ]
