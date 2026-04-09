@@ -17,6 +17,7 @@ dependencies = [
     "python-dotenv>=1.0,<2.0",
     "pytz>=2023.3",
     "croniter>=2.0,<3.0",
+    "asyncpg>=0.31.0",
 ]
 
 [project.optional-dependencies]
