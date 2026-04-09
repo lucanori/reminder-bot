@@ -16,7 +16,11 @@ services:
       - BOT_MODE=blocklist
       - DEFAULT_NOTIFICATION_INTERVAL=5
       - MAX_NOTIFICATIONS_PER_REMINDER=10
-      - DATABASE_URL=postgresql+asyncpg://reminderbot:reminderbot@postgres:5432/reminderbot
+      - REMINDER_BOT_DB_HOST=postgres
+      - REMINDER_BOT_DB_PORT=5432
+      - REMINDER_BOT_DB_USER=reminderbot
+      - REMINDER_BOT_DB_PASSWORD=reminderbot
+      - REMINDER_BOT_DB_NAME=reminderbot
       - DEBUG=false
       - LOG_LEVEL=INFO
       - TIMEZONE=${TZ}

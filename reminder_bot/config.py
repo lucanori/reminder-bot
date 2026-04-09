@@ -1,5 +1,4 @@
-
-from pydantic import ConfigDict
+from pydantic import AliasChoices, ConfigDict, Field, computed_field
 from pydantic_settings import BaseSettings
 
 
@@ -7,7 +6,28 @@ class Settings(BaseSettings):
     telegram_bot_token: str
     telegram_webhook_url: str | None = None
 
-    database_url: str = "sqlite+aiosqlite:///:memory:"
+    database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
+
+    db_host: str = Field(
+        default="localhost",
+        validation_alias=AliasChoices("DB_HOST", "REMINDER_BOT_DB_HOST"),
+    )
+    db_port: int = Field(
+        default=5432,
+        validation_alias=AliasChoices("DB_PORT", "REMINDER_BOT_DB_PORT"),
+    )
+    db_user: str = Field(
+        default="reminderbot",
+        validation_alias=AliasChoices("DB_USER", "REMINDER_BOT_DB_USER"),
+    )
+    db_password: str = Field(
+        default="reminderbot",
+        validation_alias=AliasChoices("DB_PASSWORD", "REMINDER_BOT_DB_PASSWORD"),
+    )
+    db_name: str = Field(
+        default="reminderbot",
+        validation_alias=AliasChoices("DB_NAME", "REMINDER_BOT_DB_NAME"),
+    )
 
     timezone: str = "UTC"
     debug: bool = False
@@ -25,7 +45,18 @@ class Settings(BaseSettings):
         env_file=".env",
         case_sensitive=False,
         extra="ignore",
+        protected_namespaces=(),
     )
+
+    @computed_field
+    @property
+    def constructed_database_url(self) -> str:
+        if self.database_url is not None:
+            return self.database_url
+        return (
+            f"postgresql+asyncpg://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
 
 
 def validate_settings() -> Settings:

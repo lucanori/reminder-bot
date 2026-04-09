@@ -9,8 +9,10 @@ from ..utils.logging import get_logger
 
 logger = get_logger()
 
-if settings.database_url.startswith("sqlite"):
-    db_path = settings.database_url.replace("sqlite+aiosqlite:///", "").replace(
+_database_url = settings.constructed_database_url
+
+if _database_url.startswith("sqlite"):
+    db_path = _database_url.replace("sqlite+aiosqlite:///", "").replace(
         "sqlite:///", ""
     )
     if db_path and not db_path.startswith(":"):
@@ -20,7 +22,7 @@ if settings.database_url.startswith("sqlite"):
             logger.info("Created SQLite database directory", directory=parent_dir)
 
 engine = create_async_engine(
-    settings.database_url, echo=settings.debug, pool_pre_ping=True, pool_recycle=3600
+    _database_url, echo=settings.debug, pool_pre_ping=True, pool_recycle=3600
 )
 
 async_session_factory = async_sessionmaker(

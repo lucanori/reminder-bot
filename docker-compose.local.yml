@@ -17,7 +17,11 @@ services:
       - BOT_MODE=blocklist
       - DEFAULT_NOTIFICATION_INTERVAL=5
       - MAX_NOTIFICATIONS_PER_REMINDER=10
-      - DATABASE_URL=postgresql+asyncpg://reminderbot:reminderbot@postgres:5432/reminderbot
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=reminderbot
+      - DB_PASSWORD=reminderbot
+      - DB_NAME=reminderbot
       - DEBUG=false
       - LOG_LEVEL=INFO
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}

@@ -5,11 +5,12 @@ import sys
 
 import structlog
 
+from reminder_bot.config import settings
+
 logger = structlog.get_logger()
 
 
 def parse_sqlite_path(database_url: str) -> str:
-    """Extract filesystem path from SQLite URL."""
     if database_url.startswith("sqlite+aiosqlite:///"):
         return database_url[21:]
     if database_url.startswith("sqlite:///"):
@@ -54,8 +55,7 @@ def run_alembic_command(command: list[str]) -> None:
 
 
 def bootstrap_database() -> None:
-    """Bootstrap the database: run migrations or stamp as needed."""
-    database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    database_url = settings.constructed_database_url
 
     if ":memory:" in database_url:
         logger.info("in_memory_database_skip_bootstrap")
