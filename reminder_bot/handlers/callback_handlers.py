@@ -1,3 +1,5 @@
+from datetime import UTC
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -164,11 +166,17 @@ class CallbackHandlers:
 
             message_lines = ["📋 <b>Your Active Reminders:</b>\n"]
 
+            user_tz = await self.user_service.get_user_timezone(user_id)
+
             for reminder in active_reminders[:10]:
                 interval_text = self._format_interval_text(
                     reminder.interval_days, reminder.weekday, reminder.cron_expression
                 )
-                next_time = reminder.next_notification.strftime("%m-%d %H:%M UTC")
+                next_notif_utc = reminder.next_notification.replace(
+                    tzinfo=UTC
+                )
+                next_notif_local = next_notif_utc.astimezone(user_tz)
+                next_time = next_notif_local.strftime("%m-%d %H:%M %Z")
 
                 status_emoji = (
                     "🔔"
@@ -554,13 +562,16 @@ class CallbackHandlers:
                     )
                 ]
             )
+            keyboard.append(
+                [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")]
+            )
             keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="cmd_set")])
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await query.edit_message_text(
                 f"✅ <b>Text set:</b> {template_text}\n\n"
                 "⏰ <b>Select Time</b>\n\n"
-                "Choose a time for your reminder:",
+                "Choose a time for your reminder, or use advanced cron scheduling:",
                 parse_mode="HTML",
                 reply_markup=reply_markup,
             )
@@ -614,6 +625,9 @@ class CallbackHandlers:
                 ]
             )
             keyboard.append(
+                [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")]
+            )
+            keyboard.append(
                 [InlineKeyboardButton("🔙 Back", callback_data="template_custom")]
             )
 
@@ -621,7 +635,8 @@ class CallbackHandlers:
 
             await query.edit_message_text(
                 "⏰ <b>Select Time</b>\n\n"
-                "Choose a time for your reminder or enter a custom one:",
+                "Choose a time for your reminder, enter a custom one, "
+                "or use advanced cron scheduling:",
                 parse_mode="HTML",
                 reply_markup=reply_markup,
             )
@@ -656,7 +671,6 @@ class CallbackHandlers:
                         "✏️ Custom interval", callback_data="custom_interval_manual"
                     )
                 ],
-                [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")],
                 [InlineKeyboardButton("🔙 Back", callback_data="template_custom")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -694,7 +708,6 @@ class CallbackHandlers:
                     "✏️ Custom interval", callback_data="custom_interval_manual"
                 )
             ],
-            [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")],
             [InlineKeyboardButton("🔙 Back", callback_data="custom_time")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -797,13 +810,6 @@ class CallbackHandlers:
             keyboard.append(row)
 
         keyboard.append(
-            [
-                InlineKeyboardButton(
-                    "⚙️ Enter Cron Expression", callback_data="enter_cron"
-                )
-            ]
-        )
-        keyboard.append(
             [InlineKeyboardButton("🔙 Back", callback_data="custom_interval")]
         )
 
@@ -811,8 +817,7 @@ class CallbackHandlers:
 
         await query.edit_message_text(
             "📅 <b>Select Weekday</b>\n\n"
-            "Choose which day of the week for your weekly reminder:\n\n"
-            "<i>Or use a custom cron expression for advanced scheduling</i>",
+            "Choose which day of the week for your weekly reminder:",
             parse_mode="HTML",
             reply_markup=reply_markup,
         )
@@ -1106,6 +1111,9 @@ class CallbackHandlers:
                 ]
             )
             keyboard.append(
+                [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")]
+            )
+            keyboard.append(
                 [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]
             )
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1113,7 +1121,7 @@ class CallbackHandlers:
             await update.message.reply_text(
                 f"✅ <b>Text set:</b> {custom_text}\n\n"
                 "⏰ <b>Select Time</b>\n\n"
-                "Choose a time for your reminder:",
+                "Choose a time for your reminder, or use advanced cron scheduling:",
                 parse_mode="HTML",
                 reply_markup=reply_markup,
             )
@@ -1124,10 +1132,28 @@ class CallbackHandlers:
             time_text = update.message.text.strip()
 
             if not re.match(r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$", time_text):
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Try Again", callback_data="custom_time_manual"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Back to Menu", callback_data="back_to_menu"
+                        )
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
                 await update.message.reply_text(
-                    "❌ Invalid time format! Please use HH:MM (24-hour format).\n\n"
+                    "❌ <b>Invalid time format!</b>\n\n"
+                    "Please use HH:MM format (24-hour).\n\n"
                     "<i>Examples: 08:30, 14:45, 20:00</i>",
                     parse_mode="HTML",
+                    reply_markup=reply_markup,
                 )
                 return
 
@@ -1164,7 +1190,6 @@ class CallbackHandlers:
                         "✏️ Custom interval", callback_data="custom_interval_manual"
                     )
                 ],
-                [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")],
                 [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1314,33 +1339,75 @@ class CallbackHandlers:
                 from croniter import croniter
 
                 if not croniter.is_valid(cron_expr):
+                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "🔄 Try Again", callback_data="enter_cron"
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "🏠 Back to Menu", callback_data="back_to_menu"
+                            )
+                        ],
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
                     cron_help = (
-                        "❌ Invalid cron expression. "
+                        "❌ <b>Invalid cron expression</b>\n\n"
                         "Format: <code>min hour day month weekday</code>\n\n"
                         "<b>Examples:</b>\n"
                         "• <code>0 9 * * 1</code> - Monday 09:00\n"
                         "• <code>0 8 * * 1-5</code> - Weekdays 08:00\n\n"
                         "Please try again:"
                     )
-                    await update.message.reply_text(cron_help, parse_mode="HTML")
+                    await update.message.reply_text(
+                        cron_help, parse_mode="HTML", reply_markup=reply_markup
+                    )
                     return
             except Exception:
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="enter_cron")],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Back to Menu", callback_data="back_to_menu"
+                        )
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
                 await update.message.reply_text(
                     "❌ Invalid cron expression. Please try again.",
+                    reply_markup=reply_markup,
                 )
                 return
 
             custom_text = context.user_data.get("custom_text", "Custom reminder")
-            custom_time = context.user_data.get("custom_time", "09:00")
+
+            user_id = update.effective_user.id
+            user_tz = await self.user_service.get_user_timezone(user_id)
+
+            from datetime import datetime
+
+            from croniter import croniter
+
+            base_time = datetime.now(user_tz)
+            itr = croniter(cron_expr, base_time)
+            next_local = itr.get_next(datetime)
+            schedule_time = next_local.strftime("%H:%M")
 
             try:
                 from ..models.dtos import ReminderCreateDTO
 
                 reminder_data = ReminderCreateDTO(
-                    user_id=update.effective_user.id,
+                    user_id=user_id,
                     chat_id=update.effective_chat.id,
                     text=custom_text,
-                    schedule_time=custom_time,
+                    schedule_time=schedule_time,
                     interval_days=0,
                     cron_expression=cron_expr,
                 )
@@ -1361,11 +1428,17 @@ class CallbackHandlers:
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
-                next_notif = reminder.next_notification.strftime("%Y-%m-%d %H:%M")
+
+                next_notif_utc = reminder.next_notification.replace(
+                    tzinfo=UTC
+                )
+                next_notif_local = next_notif_utc.astimezone(user_tz)
+                next_notif = next_notif_local.strftime("%Y-%m-%d %H:%M %Z")
                 await update.message.reply_text(
                     f"✅ <b>Cron Reminder Created!</b>\n\n"
                     f"📝 <b>Text:</b> {reminder.text}\n"
-                    f"⏰ <b>Schedule:</b> <code>{cron_expr}</code>\n\n"
+                    f"⏰ <b>Schedule:</b> <code>{cron_expr}</code>\n"
+                    f"📍 <b>Time:</b> {schedule_time} ({user_tz.zone})\n\n"
                     f"🔔 Next notification: <b>{next_notif}</b>",
                     parse_mode="HTML",
                     reply_markup=reply_markup,
@@ -1375,7 +1448,7 @@ class CallbackHandlers:
 
                 logger.info(
                     "cron_reminder_created",
-                    user_id=update.effective_user.id,
+                    user_id=user_id,
                     reminder_id=reminder.id,
                     cron_expression=cron_expr,
                 )
@@ -1384,10 +1457,23 @@ class CallbackHandlers:
                 logger.error(
                     "cron_reminder_creation_failed",
                     error=str(e),
-                    user_id=update.effective_user.id,
+                    user_id=user_id,
                 )
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="enter_cron")],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Back to Menu", callback_data="back_to_menu"
+                        )
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
                 await update.message.reply_text(
-                    "❌ Failed to create reminder. Please try again later."
+                    "❌ Failed to create reminder. Please try again later.",
+                    reply_markup=reply_markup,
                 )
 
             return
