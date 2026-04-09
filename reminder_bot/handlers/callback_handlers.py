@@ -683,8 +683,18 @@ class CallbackHandlers:
             [InlineKeyboardButton("📅 Daily", callback_data="custominterval_1")],
             [InlineKeyboardButton("🗓 Every 2 days", callback_data="custominterval_2")],
             [InlineKeyboardButton("📆 Every 3 days", callback_data="custominterval_3")],
-            [InlineKeyboardButton("🗓️ Weekly", callback_data="custominterval_7")],
+            [
+                InlineKeyboardButton(
+                    "🗓️ Weekly (pick day)", callback_data="custominterval_7"
+                )
+            ],
             [InlineKeyboardButton("📅 Monthly", callback_data="custominterval_30")],
+            [
+                InlineKeyboardButton(
+                    "✏️ Custom interval", callback_data="custom_interval_manual"
+                )
+            ],
+            [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")],
             [InlineKeyboardButton("🔙 Back", callback_data="custom_time")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1143,13 +1153,18 @@ class CallbackHandlers:
                         "📆 Every 3 days", callback_data="custominterval_3"
                     )
                 ],
-                [InlineKeyboardButton("🗓️ Weekly", callback_data="custominterval_7")],
+                [
+                    InlineKeyboardButton(
+                        "🗓️ Weekly (pick day)", callback_data="custominterval_7"
+                    )
+                ],
                 [InlineKeyboardButton("📅 Monthly", callback_data="custominterval_30")],
                 [
                     InlineKeyboardButton(
                         "✏️ Custom interval", callback_data="custom_interval_manual"
                     )
                 ],
+                [InlineKeyboardButton("⚙️ Advanced (cron)", callback_data="enter_cron")],
                 [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)

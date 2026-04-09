@@ -224,7 +224,7 @@ class BotService:
         self.application.add_handler(
             CallbackQueryHandler(
                 self.callback_handlers.handle_menu_callback,
-                pattern=r"^(cmd_(set|view|delete|help|timezone)|template_\w+|back_to_menu|time_\w+_[\d:]+|create_\w+_[\d:]+_\d+|custom_\w+|customtime_[\d:]+|custominterval_\d+|custom_time_manual|custom_interval_manual|delete_\d+|use_set_command|tz_[A-Za-z_/]+|tz_manual)$",
+                pattern=r"^(cmd_(set|view|delete|help|timezone)|template_\w+|back_to_menu|time_\w+_[\d:]+|create_\w+_[\d:]+_\d+|custom_\w+|customtime_[\d:]+|custominterval_\d+|custom_time_manual|custom_interval_manual|delete_\d+|use_set_command|tz_[A-Za-z_/]+|tz_manual|enter_cron|weekday_\d+)$",
             )
         )
 
