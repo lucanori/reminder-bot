@@ -60,4 +60,4 @@ logs/
 .DS_Store
 
 # Thoughts shared status directory
-thoughts/shared/status/
+substrate/traces/status/
