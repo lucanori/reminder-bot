@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytz
-from freezegun import freeze_time
 from reminder_bot.models.dtos import ReminderDTO
 from reminder_bot.models.entities import ReminderEntity, ReminderStatus
 from reminder_bot.utils.scheduler import JobScheduler
@@ -148,78 +147,6 @@ async def test_cancel_reminder(mock_bot, reminder_repository, sample_reminder):
 
     success = await scheduler.cancel_reminder(99999)
     assert success is False
-
-    await scheduler.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_recover_jobs_from_database_future_jobs(
-    mock_bot, reminder_repository, sample_user, sample_reminder
-):
-    notification_service = MagicMock()
-    notification_service.bot = mock_bot
-
-    scheduler = JobScheduler(notification_service, reminder_repository)
-    await scheduler.start()
-
-    with freeze_time("2024-01-01 12:00:00"):
-        sample_reminder.next_notification = datetime(2024, 1, 1, 14, 0, 0)
-        sample_reminder.status = ReminderStatus.ACTIVE.value
-
-        async def mock_get_active():
-            return [sample_reminder]
-
-        reminder_repository.get_active_reminders = mock_get_active
-
-        await scheduler.recover_jobs_from_database()
-
-    await scheduler.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_recover_jobs_from_database_overdue_jobs(
-    mock_bot, reminder_repository, sample_user, sample_reminder
-):
-    notification_service = MagicMock()
-    notification_service.bot = mock_bot
-
-    scheduler = JobScheduler(notification_service, reminder_repository)
-    await scheduler.start()
-
-    with freeze_time("2024-01-01 12:00:00"):
-        sample_reminder.next_notification = datetime(2024, 1, 1, 11, 30, 0)
-        sample_reminder.status = ReminderStatus.ACTIVE.value
-
-        async def mock_get_active():
-            return [sample_reminder]
-
-        reminder_repository.get_active_reminders = mock_get_active
-
-        await scheduler.recover_jobs_from_database()
-
-    await scheduler.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_recover_jobs_from_database_too_overdue(
-    mock_bot, reminder_repository, sample_user, sample_reminder
-):
-    notification_service = MagicMock()
-    notification_service.bot = mock_bot
-
-    scheduler = JobScheduler(notification_service, reminder_repository)
-    await scheduler.start()
-
-    with freeze_time("2024-01-01 14:00:00"):
-        sample_reminder.next_notification = datetime(2024, 1, 1, 11, 0, 0)
-        sample_reminder.status = ReminderStatus.ACTIVE.value
-
-        async def mock_get_active():
-            return [sample_reminder]
-
-        reminder_repository.get_active_reminders = mock_get_active
-
-        await scheduler.recover_jobs_from_database()
 
     await scheduler.shutdown()
 

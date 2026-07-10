@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 
 import pytz
@@ -16,6 +17,9 @@ from ..utils.logging import get_logger
 
 logger = get_logger()
 
+OVERDUE_RECOVERY_BASE_DELAY = 30
+OVERDUE_RECOVERY_STAGGER_STEP = 2
+
 
 class JobScheduler:
     def __init__(
@@ -25,6 +29,7 @@ class JobScheduler:
     ):
         self.notification_service = notification_service
         self.reminder_repo = reminder_repo
+        self._send_semaphore = asyncio.Semaphore(5)
 
         jobstores = {
             "default": MemoryJobStore(),
@@ -189,69 +194,87 @@ class JobScheduler:
         from ..services.notification_service import NotificationService
         from ..utils.database import get_async_session
 
-        try:
-            async with get_async_session() as session:
-                reminder_repo = ReminderRepository(session)
-                notification_service = NotificationService(
-                    self.notification_service.bot,
-                    reminder_repo,
-                    self.notification_service.user_service,
-                )
-
-                reminder_entity = await reminder_repo.get_by_id(reminder_id)
-                if (
-                    not reminder_entity
-                    or reminder_entity.status != ReminderStatus.ACTIVE.value
-                ):
-                    logger.warning(
-                        "reminder_job_skipped",
-                        reminder_id=reminder_id,
-                        status=reminder_entity.status
-                        if reminder_entity
-                        else "not_found",
+        async with self._send_semaphore:
+            try:
+                async with get_async_session() as session:
+                    reminder_repo = ReminderRepository(session)
+                    notification_service = NotificationService(
+                        self.notification_service.bot,
+                        reminder_repo,
+                        self.notification_service.user_service,
                     )
-                    return
 
-                from ..utils.transformers import entity_to_reminder_dto
+                    reminder_entity = await reminder_repo.get_by_id(reminder_id)
+                    if (
+                        not reminder_entity
+                        or reminder_entity.status != ReminderStatus.ACTIVE.value
+                    ):
+                        logger.warning(
+                            "reminder_job_skipped",
+                            reminder_id=reminder_id,
+                            status=reminder_entity.status
+                            if reminder_entity
+                            else "not_found",
+                        )
+                        return
 
-                reminder = entity_to_reminder_dto(reminder_entity)
+                    from ..utils.transformers import entity_to_reminder_dto
 
-                result = await notification_service.send_reminder_notification(reminder)
+                    reminder = entity_to_reminder_dto(reminder_entity)
 
-                if result.success:
-                    await reminder_repo.increment_notification_count(reminder_id)
+                    result = await notification_service.send_reminder_notification(
+                        reminder
+                    )
 
-                    if reminder.notification_count < reminder.max_notifications - 1:
-                        interval = (
-                            notification_service.calculate_next_notification_interval(
+                    if result.success:
+                        await reminder_repo.increment_notification_count(reminder_id)
+
+                        if reminder.notification_count < reminder.max_notifications - 1:
+                            svc = notification_service
+                            interval = svc.calculate_next_notification_interval(
                                 reminder.notification_count,
                                 reminder.notification_interval_minutes,
                             )
-                        )
-                        now_utc = datetime.now(pytz.UTC).replace(tzinfo=None)
-                        next_time = now_utc + timedelta(minutes=interval)
-                        await self.schedule_next_notification(reminder, next_time)
-                    else:
-                        await notification_service.send_escalation_warning(reminder)
-                        await self._reset_and_reschedule_reminder(
-                            reminder_repo, reminder
-                        )
-                elif result.error and result.error.startswith("blocked:"):
-                    logger.info(
-                        "skipping_reschedule_user_blocked", reminder_id=reminder_id
-                    )
-                else:
-                    logger.error(
-                        "reminder_notification_failed", reminder_id=reminder_id
-                    )
+                            now_utc = datetime.now(pytz.UTC).replace(tzinfo=None)
+                            next_time = now_utc + timedelta(minutes=interval)
 
-        except Exception as e:
-            logger.error(
-                "reminder_job_failed",
-                reminder_id=reminder_id,
-                error=str(e),
-                exc_info=True,
-            )
+                            persisted = await reminder_repo.update_next_notification(
+                                reminder_id, next_time
+                            )
+                            if not persisted:
+                                logger.error(
+                                    "failed_to_persist_next_notification",
+                                    reminder_id=reminder_id,
+                                )
+                                raise SchedulingException(
+                                    f"Failed to persist next_notification for"
+                                    f" reminder {reminder_id}"
+                                )
+
+                            await session.commit()
+                            await self.schedule_next_notification(reminder, next_time)
+                        else:
+                            await notification_service.send_escalation_warning(reminder)
+                            await self._reset_and_reschedule_reminder(
+                                reminder_repo, reminder
+                            )
+                    elif result.error and result.error.startswith("blocked:"):
+                        logger.info(
+                            "skipping_reschedule_user_blocked",
+                            reminder_id=reminder_id,
+                        )
+                    else:
+                        logger.error(
+                            "reminder_notification_failed", reminder_id=reminder_id
+                        )
+
+            except Exception as e:
+                logger.error(
+                    "reminder_job_failed",
+                    reminder_id=reminder_id,
+                    error=str(e),
+                    exc_info=True,
+                )
 
     async def _reset_and_reschedule_reminder(
         self, reminder_repo: ReminderRepository, reminder: ReminderDTO
@@ -334,6 +357,7 @@ class JobScheduler:
                 run_date=next_time,
                 args=[reminder.id],
                 id=job_id,
+                replace_existing=True,
             )
 
             logger.info(
@@ -354,10 +378,13 @@ class JobScheduler:
         from ..utils.database import get_async_session
 
         try:
+            plans: list[tuple[ReminderDTO, datetime | None]] = []
             async with get_async_session() as session:
                 reminder_repo = ReminderRepository(session)
                 active_reminders = await reminder_repo.get_active_reminders()
-                recovered_count = 0
+
+                now_utc = datetime.now(pytz.UTC).replace(tzinfo=None)
+                stagger_offset = 0
 
                 for reminder_entity in active_reminders:
                     try:
@@ -365,13 +392,11 @@ class JobScheduler:
 
                         reminder = entity_to_reminder_dto(reminder_entity)
 
-                        now_utc = datetime.now(pytz.UTC).replace(tzinfo=None)
                         if reminder.next_notification > now_utc:
                             job_id = f"reminder_{reminder.id}"
                             existing_job = self.scheduler.get_job(job_id)
                             if not existing_job:
-                                await self.schedule_reminder(reminder)
-                                recovered_count += 1
+                                plans.append((reminder, None))
                             else:
                                 logger.info(
                                     "reminder_job_already_exists",
@@ -379,20 +404,20 @@ class JobScheduler:
                                     job_id=job_id,
                                 )
                         else:
-                            overdue_minutes = int(
-                                (now_utc - reminder.next_notification).total_seconds()
-                                / 60
+                            immediate_time = now_utc + timedelta(
+                                seconds=OVERDUE_RECOVERY_BASE_DELAY + stagger_offset
                             )
-                            if overdue_minutes <= 60:
-                                immediate_time = now_utc + timedelta(seconds=30)
-                                await self.reschedule_reminder(reminder, immediate_time)
-                                recovered_count += 1
-                            else:
-                                logger.warning(
-                                    "reminder_too_overdue_skipped",
+                            persisted = await reminder_repo.update_next_notification(
+                                reminder.id, immediate_time
+                            )
+                            if not persisted:
+                                logger.error(
+                                    "reminder_recovery_persist_failed",
                                     reminder_id=reminder.id,
-                                    overdue_minutes=overdue_minutes,
                                 )
+                                continue
+                            stagger_offset += OVERDUE_RECOVERY_STAGGER_STEP
+                            plans.append((reminder, immediate_time))
 
                     except Exception as e:
                         logger.error(
@@ -401,11 +426,29 @@ class JobScheduler:
                             error=str(e),
                         )
 
-                logger.info(
-                    "jobs_recovery_completed",
-                    total_reminders=len(active_reminders),
-                    recovered_jobs=recovered_count,
-                )
+                await session.commit()
+
+            recovered_count = 0
+            for reminder, immediate_time in plans:
+                try:
+                    if immediate_time is None:
+                        await self.schedule_reminder(reminder)
+                    else:
+                        await self.reschedule_reminder(reminder, immediate_time)
+                    recovered_count += 1
+                except Exception as e:
+                    logger.error(
+                        "reminder_recovery_add_job_failed",
+                        reminder_id=reminder.id,
+                        error=str(e),
+                    )
+
+            logger.info(
+                "jobs_recovery_completed",
+                total_reminders=len(active_reminders),
+                planned_jobs=len(plans),
+                recovered_jobs=recovered_count,
+            )
 
         except Exception as e:
             logger.error("jobs_recovery_failed", error=str(e))
