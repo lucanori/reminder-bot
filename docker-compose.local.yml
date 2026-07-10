@@ -27,7 +27,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL:-}
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys;r=urllib.request.urlopen('http://localhost:8000/health',timeout=2);sys.exit(r.status!=200)"]
       interval: 30s
       timeout: 10s
       retries: 3
